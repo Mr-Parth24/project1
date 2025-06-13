@@ -1,0 +1,47 @@
+{
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 30,
+    "auto_exposure": true,
+    "exposure_value": 100,
+    "gain": 50
+  },
+  "features": {
+    "type": "orb",
+    "max_features": 1000,
+    "quality_threshold": 0.01,
+    "match_ratio": 0.75,
+    "min_matches": 20
+  },
+  "pose": {
+    "min_triangulation_points": 8,
+    "ransac_threshold": 1.0,
+    "ransac_confidence": 0.99,
+    "max_reprojection_error": 2.0,
+    "keyframe_distance_threshold": 0.1,
+    "keyframe_angle_threshold": 0.1
+  },
+  "loop": {
+    "min_loop_distance": 2.0,
+    "similarity_threshold": 0.8,
+    "geometric_verification": true,
+    "max_loop_candidates": 5
+  },
+  "visualization": {
+    "enable_3d_plot": true,
+    "enable_feature_display": true,
+    "enable_match_display": true,
+    "update_frequency": 5,
+    "plot_window_size": 500
+  },
+  "logging": {
+    "save_images": false,
+    "save_features": true,
+    "save_depth": false,
+    "compression_level": 6
+  },
+  "log_level": "INFO",
+  "data_dir": "data",
+  "log_dir": "logs"
+}
