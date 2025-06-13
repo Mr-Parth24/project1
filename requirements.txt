@@ -1,18 +1,43 @@
-# Core dependencies
+# Enhanced Visual Odometry System Requirements
+# Date: 2025-06-13
+# User: Mr-Parth24
+
+# Core camera and computer vision dependencies
 pyrealsense2>=2.54.1
-opencv-python>=4.5.0
-numpy>=1.21.0
-matplotlib>=3.3.0
-scipy>=1.7.0
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.24.0
+scipy>=1.10.0
 
-# Data processing
-pandas>=1.3.0
-h5py>=3.1.0
-scikit-learn>=1.0.0
+# Enhanced visualization and plotting
+matplotlib>=3.7.0
+Pillow>=10.0.0
 
-# GUI dependencies (tkinter is built-in with Python)
-Pillow>=8.0.0
+# Scientific computing and machine learning
+scikit-learn>=1.3.0
+pandas>=2.0.0
 
-# Utilities
-pyyaml>=5.4.0
-psutil>=5.8.0
+# Data storage and compression
+h5py>=3.8.0
+lz4>=4.3.0
+
+# System monitoring and utilities
+psutil>=5.9.0
+pyyaml>=6.0
+
+# GUI enhancements (tkinter is built-in)
+# Additional GUI libraries for enhanced experience
+ttkthemes>=3.2.0
+
+# Optional: Advanced computer vision features
+# Uncomment if needed for future enhancements
+# open3d>=0.17.0
+# trimesh>=3.21.0
+
+# Development and debugging tools
+# pytest>=7.3.0
+# pytest-cov>=4.1.0
+
+# Documentation (optional)
+# sphinx>=6.2.0
+# sphinx-rtd-theme>=1.2.0
