@@ -16,7 +16,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import logging
 
 from feature_processor import FeatureData, MatchResult
-from pose_estimator import PoseResult
+from enhanced_pose_estimator import PoseResult
 from loop_detector import LoopDetectionResult
 
 class Visualizer:

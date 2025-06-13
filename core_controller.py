@@ -16,7 +16,7 @@ import logging
 
 from camera_manager import CameraManager
 from feature_processor import FeatureProcessor
-from pose_estimator import PoseEstimator
+from enhanced_pose_estimator import PoseEstimator
 from loop_detector import LoopDetector
 from visualizer import Visualizer
 from data_manager import DataManager
