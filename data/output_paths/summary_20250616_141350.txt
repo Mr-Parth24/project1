@@ -1,0 +1,20 @@
+SLAM Tracker - Trajectory Summary
+========================================
+Generated: 2025-06-16 14:13:50
+Timestamp: 20250616_141350
+
+TRAJECTORY METRICS:
+Total Distance: 10.025 meters
+Total Points: 552
+Duration: 18.2 seconds
+
+POSITION DATA:
+Start Position: (0.000, 0.000, 0.001)
+End Position: (0.087, -1.264, -0.161)
+Net Displacement: 1.278 meters
+Loop Closure Error: 1.278 meters
+
+TRAJECTORY BOUNDS:
+X Range: -0.683 to 1.041 (1.723 m)
+Y Range: -2.078 to 0.049 (2.127 m)
+Z Range: -0.762 to 0.085 (0.848 m)
