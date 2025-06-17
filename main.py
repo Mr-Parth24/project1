@@ -230,8 +230,7 @@ def apply_enhanced_theme(app):
     dark_palette.setColor(dark_palette.HighlightedText, Qt.white)
     
     app.setPalette(dark_palette)
-    
-    # Enhanced stylesheet
+      # Enhanced stylesheet
     enhanced_style = """
     QMainWindow {
         background-color: #0d1117;
@@ -325,14 +324,6 @@ def apply_enhanced_theme(app):
         border: none;
     }
     
-    QComboBox::down-arrow {
-        image: none;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 6px solid #c9d1d9;
-        margin-right: 8px;
-    }
-    
     QSpinBox, QDoubleSpinBox {
         background-color: #21262d;
         border: 2px solid #30363d;
@@ -403,6 +394,82 @@ def apply_enhanced_theme(app):
     QMenu::item:selected {
         background-color: #30363d;
         border-radius: 4px;
+    }
+    
+    QSplitter::handle {
+        background-color: #404040;
+        width: 3px;
+    }
+    
+    QSplitter::handle:hover {
+        background-color: #4fc3f7;
+    }
+    
+    QScrollArea {
+        border: none;
+        background-color: #1e1e1e;
+    }
+    
+    QScrollBar:vertical {
+        background-color: #2d2d2d;
+        width: 12px;
+        border-radius: 6px;
+    }
+    
+    QScrollBar::handle:vertical {
+        background-color: #5a5a5a;
+        border-radius: 6px;
+        min-height: 20px;
+    }
+    
+    QScrollBar::handle:vertical:hover {
+        background-color: #6a6a6a;
+    }
+    
+    QScrollBar:horizontal {
+        background-color: #2d2d2d;
+        height: 12px;
+        border-radius: 6px;
+    }
+    
+    QScrollBar::handle:horizontal {
+        background-color: #5a5a5a;
+        border-radius: 6px;
+        min-width: 20px;
+    }
+    
+    QScrollBar::handle:horizontal:hover {
+        background-color: #6a6a6a;
+    }
+    
+    QTabWidget {
+        background-color: #252525;
+        border-radius: 8px;
+    }
+    
+    QTabWidget::pane {
+        border: 2px solid #404040;
+        border-radius: 8px;
+        background-color: #252525;
+    }
+    
+    QTabBar::tab {
+        background-color: #2d2d2d;
+        color: #ffffff;
+        padding: 8px 16px;
+        margin-right: 2px;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        font-weight: bold;
+    }
+    
+    QTabBar::tab:selected {
+        background-color: #4fc3f7;
+        color: #000000;
+    }
+    
+    QTabBar::tab:hover {
+        background-color: #3d3d3d;
     }
     """
     

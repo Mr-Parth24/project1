@@ -1,6 +1,6 @@
 """
-Enhanced Visual Odometry System with Better Tracking and Debugging
-Fixed issues with pose estimation and added comprehensive logging
+Enhanced Visual Odometry System with Landmark Tracking and Accurate Distance Estimation
+Focused on real-world distance measurement and trajectory mapping without IMU/GPS
 """
 
 import cv2
@@ -10,6 +10,172 @@ import time
 from typing import Optional, Tuple, List, Dict, Any
 from scipy.spatial.transform import Rotation as R
 from core.camera_manager import FrameData
+from collections import deque
+
+class LandmarkTracker:
+    """Track consistent landmarks across frames for better pose estimation"""
+    
+    def __init__(self, max_landmarks: int = 200):
+        self.logger = logging.getLogger(f"{__name__}.LandmarkTracker")
+        self.max_landmarks = max_landmarks
+        
+        # Landmark storage
+        self.landmarks = {}  # landmark_id -> {'3d_pos': np.array, 'descriptor': np.array, 'last_seen': frame_id}
+        self.next_landmark_id = 0
+        self.frame_count = 0
+        
+        # Tracking parameters
+        self.descriptor_match_threshold = 0.7
+        self.max_frames_without_detection = 10
+        
+    def add_landmark(self, position_3d: np.ndarray, descriptor: np.ndarray) -> int:
+        """Add a new landmark"""
+        landmark_id = self.next_landmark_id
+        self.next_landmark_id += 1
+        
+        self.landmarks[landmark_id] = {
+            '3d_pos': position_3d.copy(),
+            'descriptor': descriptor.copy(),
+            'last_seen': self.frame_count,
+            'times_seen': 1
+        }
+        
+        # Limit number of landmarks
+        if len(self.landmarks) > self.max_landmarks:
+            self._remove_oldest_landmark()
+        
+        return landmark_id
+    
+    def update_landmarks(self, keypoints: List, descriptors: np.ndarray, points_3d: np.ndarray):
+        """Update landmark tracking with new frame"""
+        self.frame_count += 1
+        
+        if len(keypoints) == 0 or descriptors is None:
+            return
+        
+        # Match descriptors with existing landmarks
+        matched_landmarks = []
+        new_points = []
+        new_descriptors = []
+        
+        for i, (kp, desc, pos_3d) in enumerate(zip(keypoints, descriptors, points_3d)):
+            if np.any(np.isnan(pos_3d)) or np.any(np.isinf(pos_3d)):
+                continue
+                
+            best_match_id = None
+            best_distance = float('inf')
+            
+            # Find best matching landmark
+            for landmark_id, landmark in self.landmarks.items():
+                # Skip if landmark hasn't been seen recently
+                if self.frame_count - landmark['last_seen'] > self.max_frames_without_detection:
+                    continue
+                
+                # Compare descriptors
+                if self._is_orb_descriptor(desc):
+                    distance = cv2.norm(desc, landmark['descriptor'], cv2.NORM_HAMMING)
+                    distance = distance / 256.0  # Normalize
+                else:
+                    distance = cv2.norm(desc, landmark['descriptor'], cv2.NORM_L2)
+                
+                if distance < best_distance and distance < self.descriptor_match_threshold:
+                    best_distance = distance
+                    best_match_id = landmark_id
+            
+            if best_match_id is not None:
+                # Update existing landmark
+                landmark = self.landmarks[best_match_id]
+                landmark['last_seen'] = self.frame_count
+                landmark['times_seen'] += 1
+                # Weighted update of 3D position
+                alpha = 0.1  # Learning rate
+                landmark['3d_pos'] = (1 - alpha) * landmark['3d_pos'] + alpha * pos_3d
+                matched_landmarks.append(best_match_id)
+            else:
+                # Add as new landmark candidate
+                new_points.append(pos_3d)
+                new_descriptors.append(desc)
+        
+        # Add new landmarks
+        for pos_3d, desc in zip(new_points, new_descriptors):
+            self.add_landmark(pos_3d, desc)
+        
+        # Remove old landmarks
+        self._cleanup_old_landmarks()
+        
+        self.logger.debug(f"Landmarks: {len(self.landmarks)} total, {len(matched_landmarks)} matched")
+    
+    def get_stable_landmarks(self, min_observations: int = 3) -> Dict:
+        """Get landmarks that have been observed multiple times"""
+        stable = {}
+        for landmark_id, landmark in self.landmarks.items():
+            if landmark['times_seen'] >= min_observations:
+                stable[landmark_id] = landmark
+        return stable
+    
+    def _is_orb_descriptor(self, descriptor: np.ndarray) -> bool:
+        """Check if descriptor is from ORB (binary) or other (float)"""
+        return descriptor.dtype == np.uint8
+    
+    def _remove_oldest_landmark(self):
+        """Remove the landmark that was seen longest ago"""
+        if not self.landmarks:
+            return
+        oldest_id = min(self.landmarks.keys(), 
+                       key=lambda x: self.landmarks[x]['last_seen'])
+        del self.landmarks[oldest_id]
+    
+    def _cleanup_old_landmarks(self):
+        """Remove landmarks that haven't been seen recently"""
+        to_remove = []
+        for landmark_id, landmark in self.landmarks.items():
+            if self.frame_count - landmark['last_seen'] > self.max_frames_without_detection:
+                to_remove.append(landmark_id)
+        
+        for landmark_id in to_remove:
+            del self.landmarks[landmark_id]
+
+class AccurateDistanceEstimator:
+    """Estimates real-world distances with scale correction"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(f"{__name__}.AccurateDistanceEstimator")
+        
+        # Scale estimation
+        self.scale_estimates = deque(maxlen=50)
+        self.current_scale = 1.0
+        self.scale_confidence = 0.0
+        
+        # Reference measurements
+        self.reference_distances = []  # Known real-world distances for calibration
+        self.estimated_distances = []  # Corresponding estimated distances
+        
+    def add_scale_measurement(self, estimated_distance: float, real_distance: float):
+        """Add a known distance measurement for scale calibration"""
+        if estimated_distance > 0 and real_distance > 0:
+            scale = real_distance / estimated_distance
+            self.scale_estimates.append(scale)
+            self.reference_distances.append(real_distance)
+            self.estimated_distances.append(estimated_distance)
+            
+            # Update current scale (median of recent estimates)
+            if len(self.scale_estimates) >= 3:
+                self.current_scale = np.median(list(self.scale_estimates))
+                self.scale_confidence = 1.0 / (np.std(list(self.scale_estimates)) + 0.001)
+            
+            self.logger.info(f"Scale updated: {self.current_scale:.4f} (confidence: {self.scale_confidence:.2f})")
+    
+    def estimate_real_distance(self, estimated_distance: float) -> float:
+        """Convert estimated distance to real-world distance"""
+        return estimated_distance * self.current_scale
+    
+    def get_scale_info(self) -> Dict[str, float]:
+        """Get current scale estimation information"""
+        return {
+            'scale': self.current_scale,
+            'confidence': self.scale_confidence,
+            'measurements': len(self.scale_estimates)
+        }
 
 class FeatureTracker:
     """Enhanced feature tracking with better matching and validation"""
@@ -33,6 +199,10 @@ class FeatureTracker:
         self.total_features_detected = 0
         self.total_matches_found = 0
         self.good_matches_ratio = 0.0
+        
+        # Feature quality filtering
+        self.min_response = 30.0  # Minimum feature response
+        self.max_reproj_error = 2.0  # Maximum reprojection error
         
     def _create_detector(self):
         """Create feature detector based on type"""
@@ -58,7 +228,11 @@ class FeatureTracker:
                     sigma=1.6
                 )
             elif self.detector_type == 'AKAZE':
-                detector = cv2.AKAZE_create()
+                detector = cv2.AKAZE_create(
+                    threshold=0.001,
+                    nOctaves=4,
+                    nOctaveLayers=4
+                )
             else:
                 self.logger.warning(f"Unknown detector type: {self.detector_type}, using ORB")
                 detector = cv2.ORB_create(nfeatures=self.max_features)
@@ -79,7 +253,7 @@ class FeatureTracker:
         return matcher
     
     def detect_and_compute(self, image: np.ndarray) -> Tuple[List, np.ndarray]:
-        """Detect keypoints and compute descriptors"""
+        """Detect keypoints and compute descriptors with quality filtering"""
         try:
             if len(image.shape) == 3:
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -89,15 +263,37 @@ class FeatureTracker:
             # Enhance image for better feature detection
             gray = cv2.equalizeHist(gray)
             
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            gray = clahe.apply(gray)
+            
             keypoints, descriptors = self.detector.detectAndCompute(gray, None)
             
+            # Filter keypoints by response strength
+            if keypoints and hasattr(keypoints[0], 'response'):
+                good_keypoints = []
+                good_descriptors = []
+                
+                for i, kp in enumerate(keypoints):
+                    if kp.response >= self.min_response:
+                        good_keypoints.append(kp)
+                        if descriptors is not None:
+                            good_descriptors.append(descriptors[i])
+                
+                keypoints = good_keypoints
+                if good_descriptors:
+                    descriptors = np.array(good_descriptors)
+                else:
+                    descriptors = None
+            
             self.total_features_detected = len(keypoints)
-            self.logger.debug(f"Detected {len(keypoints)} features")
+            self.logger.debug(f"Detected {len(keypoints)} high-quality features")
             
             return keypoints, descriptors
             
         except Exception as e:
             self.logger.error(f"Feature detection failed: {e}")
+            return [], None
             return [], None
     
     def match_features(self, desc1: np.ndarray, desc2: np.ndarray, 
@@ -227,7 +423,7 @@ class PoseEstimator:
             return None, None, None
 
 class VisualOdometry:
-    """Enhanced Visual Odometry with better tracking and debugging"""
+    """Enhanced Visual Odometry with landmark tracking, loop detection, and accurate distance estimation"""
     
     def __init__(self, camera_matrix: np.ndarray, depth_scale: float = 0.001, 
                  detector_type: str = 'ORB', max_features: int = 1000):
@@ -236,6 +432,8 @@ class VisualOdometry:
         # Initialize components
         self.feature_tracker = FeatureTracker(detector_type, max_features)
         self.pose_estimator = PoseEstimator(camera_matrix, depth_scale)
+        self.landmark_tracker = LandmarkTracker(max_landmarks=300)
+        self.distance_estimator = AccurateDistanceEstimator()
         
         # Camera parameters
         self.camera_matrix = camera_matrix
@@ -245,6 +443,7 @@ class VisualOdometry:
         self.current_pose = np.eye(4)
         self.trajectory = [self.current_pose.copy()]
         self.total_distance = 0.0
+        self.real_world_distance = 0.0
         
         # Frame tracking
         self.prev_frame_data = None
@@ -252,11 +451,21 @@ class VisualOdometry:
         self.initialization_frames = 0
         self.is_initialized = False
         
+        # Loop detection
+        self.loop_closures = []
+        self.loop_detection_threshold = 0.8  # meters
+        self.min_loop_separation = 50  # minimum frames between loop checks
+        
+        # Trajectory analysis
+        self.trajectory_positions = []
+        self.angle_changes = []
+        self.movement_directions = []
+        
         # Performance tracking
         self.processing_times = []
         self.successful_estimates = 0
         
-        self.logger.info("VisualOdometry initialized")
+        self.logger.info("Enhanced VisualOdometry initialized with landmark tracking and loop detection")
         
     def process_frame(self, frame_data: FrameData) -> Dict[str, Any]:
         """Process a new frame and update odometry"""

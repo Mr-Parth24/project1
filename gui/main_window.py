@@ -118,12 +118,16 @@ class ModernDebugWidget(QWidget):
                 padding: 4px 8px;
                 border-radius: 4px;
                 border: 1px solid #404040;
-            }
-        """)
+            }        """)
         layout.addWidget(self.status_bar)
     
     def add_debug_info(self, message: str, level: str = "INFO"):
-        """Add debug information with color coding"""
+        """Add debug information with color coding - thread safe"""
+        # Use QTimer.singleShot to ensure GUI updates happen in main thread
+        QTimer.singleShot(0, lambda: self._add_debug_info_safe(message, level))
+    
+    def _add_debug_info_safe(self, message: str, level: str = "INFO"):
+        """Thread-safe debug info addition"""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         
         # Color coding based on level
@@ -461,8 +465,7 @@ class MainWindow(QMainWindow):
         # Debug and monitoring
         self.frame_processing_times = []
         self.tracking_failures = 0
-        
-        # Initialize UI
+          # Initialize UI
         self.init_modern_ui()
         
         # Connect signals
@@ -473,43 +476,106 @@ class MainWindow(QMainWindow):
     def init_modern_ui(self):
         """Initialize modern user interface with better visibility"""
         self.setWindowTitle("RealSense D435i Visual Odometry - Mr-Parth24")
-        self.setGeometry(100, 100, 1600, 1000)
+        
+        # Set minimum and default sizes for better responsiveness
+        self.setMinimumSize(1400, 900)
+        self.resize(1600, 1000)
         
         # Set window icon
         self.setWindowIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
         
-        # Create central widget and layout
+        # Create central widget with splitter for better layout management
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Main layout - horizontal splitter for better space management
+        # Main layout with splitter
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setSpacing(8)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        
+        # Create splitter for resizable panels
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #404040;
+                width: 3px;
+            }
+            QSplitter::handle:hover {
+                background-color: #4fc3f7;
+            }
+        """)
         
         # Left panel - Camera and Controls
         left_panel = self.create_left_panel()
-        main_layout.addWidget(left_panel, stretch=2)
+        splitter.addWidget(left_panel)
         
         # Right panel - Trajectory and Stats
         right_panel = self.create_right_panel()
-        main_layout.addWidget(right_panel, stretch=3)
+        splitter.addWidget(right_panel)
+        
+        # Set splitter proportions (40% left, 60% right)
+        splitter.setSizes([600, 900])
+        splitter.setStretchFactor(0, 2)  # Left panel
+        splitter.setStretchFactor(1, 3)  # Right panel
+        
+        main_layout.addWidget(splitter)
         
         # Create modern status bar
         self.create_modern_status_bar()
         
         # Create modern menu bar
         self.create_modern_menu_bar()
-        
-        # Apply modern theme
+          # Apply modern theme
         self.apply_modern_theme()
     
     def create_left_panel(self) -> QWidget:
         """Create left panel with camera and controls"""
+        # Create scroll area for left panel
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setMaximumWidth(600)
+        left_scroll.setMinimumWidth(500)
+        
+        # Style the scroll area
+        left_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #1e1e1e;
+            }
+            QScrollBar:vertical {
+                background-color: #2d2d2d;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #5a5a5a;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #6a6a6a;
+            }
+            QScrollBar:horizontal {
+                background-color: #2d2d2d;
+                height: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #5a5a5a;
+                border-radius: 6px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #6a6a6a;
+            }
+        """)
+        
         left_widget = QWidget()
-        left_widget.setMaximumWidth(600)
         left_layout = QVBoxLayout(left_widget)
         left_layout.setSpacing(8)
+        left_layout.setContentsMargins(8, 8, 8, 8)
         
         # Camera section
         camera_group = QGroupBox("📹 Camera Feed")
@@ -534,9 +600,11 @@ class MainWindow(QMainWindow):
         
         camera_layout = QVBoxLayout(camera_group)
         self.camera_widget = CameraWidget()
+        # Set minimum size for camera widget
+        self.camera_widget.setMinimumSize(480, 360)
         camera_layout.addWidget(self.camera_widget)
         
-        left_layout.addWidget(camera_group, stretch=3)
+        left_layout.addWidget(camera_group)
         
         # Controls section
         controls_group = QGroupBox("🎮 Control Panel")
@@ -563,15 +631,62 @@ class MainWindow(QMainWindow):
         self.control_panel = ControlPanel()
         controls_layout.addWidget(self.control_panel)
         
-        left_layout.addWidget(controls_group, stretch=2)
+        left_layout.addWidget(controls_group)        
+        # Add stretch to prevent widgets from expanding unnecessarily
+        left_layout.addStretch()
         
-        return left_widget
+        # Set the widget in the scroll area
+        left_scroll.setWidget(left_widget)
+        
+        return left_scroll
     
     def create_right_panel(self) -> QWidget:
         """Create right panel with trajectory and stats"""
+        # Create scroll area for right panel
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        right_scroll.setMinimumWidth(800)
+        
+        # Style the scroll area
+        right_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #1e1e1e;
+            }
+            QScrollBar:vertical {
+                background-color: #2d2d2d;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #5a5a5a;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #6a6a6a;
+            }
+            QScrollBar:horizontal {
+                background-color: #2d2d2d;
+                height: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #5a5a5a;
+                border-radius: 6px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #6a6a6a;
+            }
+        """)
+        
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setSpacing(8)
+        right_layout.setContentsMargins(8, 8, 8, 8)
         
         # Trajectory section
         trajectory_group = QGroupBox("🗺️ 3D Trajectory View")
@@ -596,13 +711,19 @@ class MainWindow(QMainWindow):
         
         trajectory_layout = QVBoxLayout(trajectory_group)
         self.trajectory_widget = TrajectoryWidget()
+        # Set minimum size for trajectory widget
+        self.trajectory_widget.setMinimumSize(600, 400)
         trajectory_layout.addWidget(self.trajectory_widget)
         
-        right_layout.addWidget(trajectory_group, stretch=2)
+        right_layout.addWidget(trajectory_group)
         
-        # Bottom section - Stats and Debug in tabs
-        bottom_tabs = QTabWidget()
-        bottom_tabs.setStyleSheet("""
+        # Statistics and Debug panel in tabs for better organization
+        info_tabs = QTabWidget()
+        info_tabs.setStyleSheet("""
+            QTabWidget {
+                background-color: #252525;
+                border-radius: 8px;
+            }
             QTabWidget::pane {
                 border: 2px solid #404040;
                 border-radius: 8px;
@@ -610,7 +731,7 @@ class MainWindow(QMainWindow):
             }
             QTabBar::tab {
                 background-color: #2d2d2d;
-                color: #cccccc;
+                color: #ffffff;
                 padding: 8px 16px;
                 margin-right: 2px;
                 border-top-left-radius: 8px;
@@ -622,22 +743,41 @@ class MainWindow(QMainWindow):
                 color: #000000;
             }
             QTabBar::tab:hover {
-                background-color: #404040;
-                color: #ffffff;
+                background-color: #3d3d3d;
             }
         """)
         
         # Statistics tab
         self.stats_widget = ModernStatsWidget()
-        bottom_tabs.addTab(self.stats_widget, "📊 Statistics")
+        stats_scroll = QScrollArea()
+        stats_scroll.setWidgetResizable(True)
+        stats_scroll.setWidget(self.stats_widget)
+        stats_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+        info_tabs.addTab(stats_scroll, "📊 Statistics")
         
         # Debug tab
         self.debug_widget = ModernDebugWidget()
-        bottom_tabs.addTab(self.debug_widget, "🐛 Debug Log")
+        debug_scroll = QScrollArea()
+        debug_scroll.setWidgetResizable(True)
+        debug_scroll.setWidget(self.debug_widget)
+        debug_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+        info_tabs.addTab(debug_scroll, "🐛 Debug Log")        
+        right_layout.addWidget(info_tabs)
         
-        right_layout.addWidget(bottom_tabs, stretch=1)
+        # Set the widget in the scroll area
+        right_scroll.setWidget(right_widget)
         
-        return right_widget
+        return right_scroll
     
     def create_modern_status_bar(self):
         """Create modern status bar"""
