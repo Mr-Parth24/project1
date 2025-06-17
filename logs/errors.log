@@ -1,0 +1,8 @@
+2025-06-17 13:22:43,255 - UNCAUGHT_EXCEPTION - [31mERROR[0m[0m[0m[0m[0m - handle_exception:211 - Uncaught exception
+(<class 'AttributeError'>, AttributeError("'list' object has no attribute 'tolist'"), <traceback object at 0x000002073796D540>)
+Traceback (most recent call last):
+  File "c:\Parth\Project\CVL\01\gui\main_window.py", line 866, in closeEvent
+    self.config.save_config()
+  File "c:\Parth\Project\CVL\01\config\camera_config.py", line 134, in save_config
+    'distortion': self.rgb_intrinsics.distortion.tolist()
+AttributeError: 'list' object has no attribute 'tolist'

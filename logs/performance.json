@@ -1,0 +1,12 @@
+{
+  "session_start": "2025-06-17T13:20:03.838446",
+  "frames_processed": 0,
+  "tracking_successes": 0,
+  "tracking_failures": 0,
+  "average_processing_time": 0.0,
+  "peak_memory_usage": 0.0,
+  "features_detected": [],
+  "pose_updates": [],
+  "errors": [],
+  "session_end": "2025-06-17T13:22:43.302486"
+}
