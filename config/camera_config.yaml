@@ -1,0 +1,33 @@
+# Intel RealSense D435i Camera Configuration
+camera:
+  # Camera resolution settings
+  color_width: 640
+  color_height: 480
+  depth_width: 640
+  depth_height: 480
+  fps: 30
+  
+  # Processing settings
+  enable_depth: true
+  enable_color: true
+  enable_imu: false  # We're not using IMU as per requirements
+  
+  # Depth processing
+  depth_filters:
+    decimation: true
+    spatial: true
+    temporal: true
+    hole_filling: true
+  
+  # Auto exposure settings
+  auto_exposure: true
+  exposure: 100  # Used when auto_exposure is false
+  gain: 50       # Used when auto_exposure is false
+
+# GUI Settings
+gui:
+  window_title: "Agricultural SLAM System - D435i"
+  window_width: 1200
+  window_height: 800
+  camera_display_width: 640
+  camera_display_height: 480

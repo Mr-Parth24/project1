@@ -1,0 +1,50 @@
+# SLAM Configuration for Agricultural Equipment Tracking
+slam:
+  # Feature detection settings
+  max_features: 1000
+  min_features_for_tracking: 30
+  min_features_for_keyframe: 50
+  
+  # Visual odometry settings
+  min_matches: 8                        # Increased for more reliable estimation
+  ransac_threshold: 3.0                 # Reduced for stricter outlier rejection
+  ransac_iterations: 500
+  max_translation_per_frame: 5.0        # Reduced from 10.0 meters
+  max_rotation_per_frame: 1.57          # 90 degrees max rotation
+  
+  # Movement filtering (CRITICAL for stationary detection)
+  min_translation_threshold: 0.10       # Increased to 10cm - more aggressive filtering
+  min_rotation_threshold: 0.087         # 5 degrees in radians
+  stationary_threshold: 0.10            # Must move at least 10cm to register
+  movement_consistency_threshold: 0.05  # For movement validation
+  
+  # Keyframe creation thresholds (more conservative)
+  keyframe_distance_threshold: 0.25     # Increased to 25cm
+  keyframe_angle_threshold: 0.174       # 10 degrees in radians
+  
+  # Agricultural-specific settings
+  field_mode: true
+  robust_tracking: true
+  loop_closure_enabled: true
+  filter_small_movements: true          # Enable aggressive noise filtering
+  stationary_detection_enabled: true   # Enable stationary detection
+  
+# Camera calibration (D435i defaults)
+camera_calibration:
+  fx: 607.4
+  fy: 607.4
+  cx: 319.5
+  cy: 239.5
+  
+  # Distortion coefficients
+  k1: 0.0
+  k2: 0.0
+  p1: 0.0
+  p2: 0.0
+  k3: 0.0
+
+# Trajectory settings
+trajectory:
+  save_format: "npz"
+  auto_save: false
+  max_points: 10000
