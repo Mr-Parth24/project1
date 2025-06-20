@@ -1,0 +1,22 @@
+# Core Dependencies
+numpy>=1.21.0
+opencv-python>=4.8.0
+PyQt6>=6.5.0
+pyrealsense2>=2.54.0
+
+# Additional Dependencies for Enhanced Features
+psutil>=5.9.0              # For performance monitoring
+GPUtil>=1.4.0              # For GPU monitoring (optional)
+scipy>=1.9.0               # For advanced filtering
+scikit-learn>=1.1.0        # For outlier detection
+matplotlib>=3.6.0          # For plotting (backup visualization)
+
+# Optional OpenGL Dependencies
+PyOpenGL>=3.1.6            # For 3D visualization
+PyOpenGL-accelerate>=3.1.6  # For OpenGL acceleration
+
+# YAML Configuration
+PyYAML>=6.0
+
+# Data Processing
+Pillow>=9.0.0              # Image processing

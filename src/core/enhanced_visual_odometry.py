@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import time
 from typing import Tuple, Dict, List, Optional
-from src.core.feature_detector import FeatureDetector
-from src.utils.config_manager import get_config_manager
+from .feature_detector import FeatureDetector
+from ..utils.config_manager import get_config_manager
 
 class EnhancedVisualOdometry:
     """
@@ -475,4 +475,4 @@ class EnhancedVisualOdometry:
         self.validated_movements = []
         self.drift_accumulator = np.array([0.0, 0.0, 0.0])
         
-        print("✅ Enhanced Visual Odometry reset") 
+        print("✅ Enhanced Visual Odometry reset")

@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files
+data/trajectories/*.npz
+data/trajectories/*.csv
+data/maps/*.pkl
+data/logs/*.log
+data/logs/*.json
+
+# Performance reports
+performance_report_*.json
+*_calibration_*.json
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Camera calibration files (keep examples, ignore user-generated)
+*_user_calibration_*

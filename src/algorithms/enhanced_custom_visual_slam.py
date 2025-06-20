@@ -1,397 +1,560 @@
 """
-Enhanced Custom Visual SLAM with 2024 Research Improvements
-Addresses pose estimation failures and tracking issues
+Streamlined Enhanced Custom Visual SLAM
+Optimized integration with agricultural core components
+Focus on reliability and real-time performance
 """
 
 import numpy as np
 import cv2
 import time
+import threading
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
-from src.core.enhanced_visual_odometry import EnhancedVisualOdometry
-from src.core.feature_detector import FeatureDetector
-from src.utils.config_manager import get_config_manager
+from collections import deque
+
+from src.core.agri_slam_core import AgriSLAMCore
+from ..core.precision_distance_tracker import PrecisionDistanceTracker
+from ..core.camera_manager import CameraManager
+from ..utils.data_logger import get_data_logger
 
 @dataclass
-class Keyframe:
-    """Enhanced keyframe with better tracking"""
-    id: int
-    pose: np.ndarray
-    features: np.ndarray
-    descriptors: np.ndarray
-    points_3d: np.ndarray
+class StreamlinedSLAMResults:
+    """Streamlined SLAM results for better performance"""
     timestamp: float
+    pose_estimated: bool
+    position: np.ndarray
+    rotation: np.ndarray
+    total_distance: float
+    precision_distance: float
+    tracking_quality: float
+    num_features: int
+    num_keyframes: int
+    slam_mode: str
+    processing_time: float
+    agricultural_context: Dict
 
-class EnhancedCustomVisualSLAM:
+class StreamlinedEnhancedSLAM:
     """
-    Enhanced Agricultural Visual SLAM System with Latest Research
-    - Fixes pose estimation failures through robust multi-method approach
-    - Addresses distance measurement inconsistencies
-    - Implements adaptive parameter tuning
-    - Includes proper error handling and validation
+    Streamlined Enhanced SLAM for Agricultural Applications
+    Optimized for real-time performance and reliability
     """
     
-    def __init__(self):
-        """Initialize enhanced SLAM system"""
-        self.config_manager = get_config_manager()
+    def __init__(self, camera_manager: CameraManager):
+        """Initialize streamlined enhanced SLAM"""
+        self.camera_manager = camera_manager
+        self.data_logger = get_data_logger()
         
-        # Use enhanced visual odometry
-        self.visual_odometry = EnhancedVisualOdometry()
+        # Core components - simplified initialization
+        self.slam_core = AgriSLAMCore(camera_manager)
+        self.distance_tracker = PrecisionDistanceTracker()
         
-        # Enhanced feature detection
-        max_features = self.config_manager.get_slam_parameter('max_features', 1000)
-        self.feature_detector = FeatureDetector(max_features=max_features)
-        
-        # SLAM state with better tracking
+        # Streamlined state tracking
+        self.current_results = None
         self.is_initialized = False
-        self.keyframes: List[Keyframe] = []
-        self.current_keyframe_id = 0
-        self.map_points = []
+        self.processing_active = False
         
-        # Enhanced keyframe creation thresholds
-        self.keyframe_distance_threshold = 0.15  # 15cm
-        self.keyframe_angle_threshold = 0.1      # ~6 degrees
+        # Performance optimization
+        self.frame_skip_counter = 0
+        self.frame_skip_threshold = 1  # Process every frame initially
+        self.performance_mode = "BALANCED"  # FAST, BALANCED, ACCURATE
         
-        # Performance and error tracking
-        self.processing_times = []
-        self.slam_status = "INITIALIZING"
-        self.last_pose = np.eye(4)
-        self.frame_count = 0
-        self.error_count = 0
-        self.last_successful_frame = 0
+        # Thread safety - simplified
+        self.results_lock = threading.Lock()
         
-        # Distance tracking fix
-        self.cumulative_distance = 0.0
-        self.last_valid_position = np.array([0.0, 0.0, 0.0])
-        
-        # Agricultural-specific settings
-        self.field_mode = self.config_manager.get_slam_parameter('field_mode', True)
-        self.robust_tracking = True
-        
-        # Error recovery mechanisms
-        self.max_consecutive_failures = 30
-        self.recovery_mode = False
-        
-        print("✅ Enhanced Custom Visual SLAM initialized")
-        print(f"   Thresholds: {self.keyframe_distance_threshold:.2f}m, {np.degrees(self.keyframe_angle_threshold):.1f}°")
-    
-    def validate_frame_data(self, color_frame: np.ndarray, depth_frame: np.ndarray) -> bool:
-        """Validate input frame data to prevent parsing errors"""
-        try:
-            # Check if frames are valid
-            if color_frame is None or depth_frame is None:
-                return False
-            
-            # Check frame shapes
-            if len(color_frame.shape) not in [2, 3] or len(depth_frame.shape) != 2:
-                return False
-            
-            # Check frame dimensions
-            if color_frame.shape[:2] != depth_frame.shape[:2]:
-                print(f"⚠️ Frame dimension mismatch: color {color_frame.shape}, depth {depth_frame.shape}")
-                return False
-            
-            # Check for reasonable frame size
-            if color_frame.shape[0] < 100 or color_frame.shape[1] < 100:
-                return False
-            
-            # Check data types
-            if color_frame.dtype != np.uint8 or depth_frame.dtype != np.uint16:
-                print(f"⚠️ Invalid frame data types: color {color_frame.dtype}, depth {depth_frame.dtype}")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            print(f"Frame validation error: {e}")
-            return False
-    
-    def process_frame(self, color_frame: np.ndarray, depth_frame: np.ndarray) -> Dict:
-        """
-        Enhanced frame processing with robust error handling
-        """
-        start_time = time.time()
-        self.frame_count += 1
-        
-        # Initialize default results
-        results = {
-            'pose_estimated': False,
-            'position': self.last_valid_position.copy(),
-            'rotation': np.eye(3),
-            'num_features': 0,
-            'num_matches': 0,
-            'inliers': 0,
-            'translation_magnitude': 0.0,
-            'keyframes_count': len(self.keyframes),
-            'map_points_count': len(self.map_points),
-            'slam_status': self.slam_status,
-            'processing_time': 0.0,
-            'debug_info': 'Processing...',
-            'distance_traveled': self.cumulative_distance
+        # Agricultural tracking - essential only
+        self.agricultural_stats = {
+            'crop_rows_detected': False,
+            'ground_plane_valid': False,
+            'field_coverage_area': 0.0,
+            'total_trajectory_points': 0
         }
         
-        try:
-            # Validate input frames
-            if not self.validate_frame_data(color_frame, depth_frame):
-                results['debug_info'] = 'Invalid frame data'
-                self.error_count += 1
-                return results
-            
-            # Enhanced visual odometry processing
-            vo_results = self.visual_odometry.process_frame(color_frame, depth_frame)
-            
-            # Update results with VO data
-            results.update({
-                'pose_estimated': vo_results['pose_estimated'],
-                'position': vo_results['position'].copy(),
-                'rotation': vo_results['rotation'].copy(),
-                'num_features': vo_results['num_features'],
-                'num_matches': vo_results['num_matches'],
-                'inliers': vo_results['inliers'],
-                'translation_magnitude': vo_results['translation_magnitude'],
-                'debug_info': vo_results['debug_info']
-            })
-            
-            # Handle SLAM state based on VO results
-            if not self.is_initialized:
-                if vo_results['pose_estimated']:
-                    # Enhanced initialization
-                    self.initialize_slam(color_frame, depth_frame, vo_results)
-                    results['slam_status'] = "INITIALIZED"
-                    results['debug_info'] = f"Enhanced SLAM initialized: {vo_results['debug_info']}"
-                    print(f"✅ Enhanced SLAM initialized successfully!")
-                else:
-                    self.slam_status = "INITIALIZING"
-                    results['debug_info'] = f"Waiting for initialization: {vo_results['debug_info']}"
-            else:
-                # Process tracking
-                if vo_results['pose_estimated']:
-                    self.handle_successful_tracking(color_frame, depth_frame, vo_results, results)
-                else:
-                    self.handle_tracking_failure(vo_results, results)
-            
-            # Update distance tracking
-            self.update_distance_tracking(vo_results)
-            results['distance_traveled'] = self.cumulative_distance
-            
-            # Reset error count on success
-            if vo_results['pose_estimated']:
-                self.error_count = 0
-                self.last_successful_frame = self.frame_count
-                
-        except Exception as e:
-            print(f"❌ SLAM processing error: {e}")
-            results['debug_info'] = f'Processing error: {str(e)}'
-            self.error_count += 1
-            
-            # Error recovery
-            if self.error_count > self.max_consecutive_failures:
-                self.initiate_recovery_mode()
+        # Performance monitoring - lightweight
+        self.perf_monitor = {
+            'avg_fps': 0.0,
+            'processing_times': deque(maxlen=30),
+            'tracking_success_count': 0,
+            'total_frame_count': 0
+        }
         
-        # Performance tracking
-        processing_time = time.time() - start_time
-        self.processing_times.append(processing_time)
-        if len(self.processing_times) > 100:
-            self.processing_times.pop(0)
-        
-        results['processing_time'] = processing_time
-        results['keyframes_count'] = len(self.keyframes)
-        
-        return results
+        print("Streamlined Enhanced SLAM initialized:")
+        print(f"  - Performance mode: {self.performance_mode}")
+        print(f"  - Frame processing: optimized")
+        print(f"  - Agricultural features: essential only")
     
-    def initialize_slam(self, color_frame: np.ndarray, depth_frame: np.ndarray, vo_results: Dict):
-        """Enhanced SLAM initialization"""
-        self.is_initialized = True
-        self.slam_status = "TRACKING"
-        self.last_pose = np.eye(4)
-        self.last_pose[:3, :3] = vo_results['rotation']
-        self.last_pose[:3, 3] = vo_results['position']
+    def set_performance_mode(self, mode: str):
+        """
+        Set performance mode for different use cases
         
-        # Create first keyframe with enhanced data
-        feature_results = self.feature_detector.process_frame(color_frame)
-        if feature_results['keypoints'] is not None:
-            self.create_enhanced_keyframe(
-                color_frame, depth_frame, self.last_pose,
-                feature_results['keypoints'],
-                feature_results['descriptors']
-            )
+        Args:
+            mode: 'FAST', 'BALANCED', or 'ACCURATE'
+        """
+        self.performance_mode = mode
         
-        self.last_valid_position = vo_results['position'].copy()
+        if mode == "FAST":
+            self.frame_skip_threshold = 2  # Process every 2nd frame
+            print("Performance mode: FAST (30+ FPS target)")
+        elif mode == "BALANCED":
+            self.frame_skip_threshold = 1  # Process every frame
+            print("Performance mode: BALANCED (20-30 FPS target)")
+        elif mode == "ACCURATE":
+            self.frame_skip_threshold = 1  # Process every frame with full validation
+            print("Performance mode: ACCURATE (15+ FPS target)")
     
-    def handle_successful_tracking(self, color_frame: np.ndarray, depth_frame: np.ndarray, 
-                                 vo_results: Dict, results: Dict):
-        """Handle successful tracking frame"""
-        # Update pose
-        current_pose = np.eye(4)
-        current_pose[:3, :3] = vo_results['rotation']
-        current_pose[:3, 3] = vo_results['position']
-        self.last_pose = current_pose
+    def process_frame_streamlined(self, color_frame: np.ndarray, 
+                                depth_frame: np.ndarray, 
+                                timestamp: float = None) -> StreamlinedSLAMResults:
+        """
+        Streamlined frame processing for optimal performance
         
-        # Check if we should create a new keyframe
-        if self.should_create_keyframe(current_pose):
-            feature_results = self.feature_detector.process_frame(color_frame)
-            if feature_results['keypoints'] is not None:
-                self.create_enhanced_keyframe(
-                    color_frame, depth_frame, current_pose,
-                    feature_results['keypoints'],
-                    feature_results['descriptors']
+        Args:
+            color_frame: RGB color image
+            depth_frame: Depth image  
+            timestamp: Frame timestamp
+            
+        Returns:
+            StreamlinedSLAMResults object
+        """
+        if timestamp is None:
+            timestamp = time.time()
+        
+        processing_start = time.time()
+        
+        # Frame skipping for performance
+        self.frame_skip_counter += 1
+        if self.frame_skip_counter < self.frame_skip_threshold:
+            # Return previous results with updated timestamp
+            if self.current_results:
+                return StreamlinedSLAMResults(
+                    timestamp=timestamp,
+                    pose_estimated=False,
+                    position=self.current_results.position.copy(),
+                    rotation=self.current_results.rotation.copy(),
+                    total_distance=self.current_results.total_distance,
+                    precision_distance=self.current_results.precision_distance,
+                    tracking_quality=self.current_results.tracking_quality,
+                    num_features=self.current_results.num_features,
+                    num_keyframes=self.current_results.num_keyframes,
+                    slam_mode="SKIPPED",
+                    processing_time=0.001,
+                    agricultural_context=self.current_results.agricultural_context.copy()
                 )
-                results['debug_info'] += f" | New keyframe {self.current_keyframe_id-1}"
         
-        self.slam_status = "TRACKING"
-        results['slam_status'] = "TRACKING"
-        results['debug_info'] = f"Enhanced tracking: {vo_results['debug_info']}"
+        self.frame_skip_counter = 0
+        self.perf_monitor['total_frame_count'] += 1
         
-        # Update valid position
-        self.last_valid_position = vo_results['position'].copy()
-        
-        # Log successful tracking occasionally
-        if self.frame_count % 30 == 0:
-            print(f"✅ Enhanced SLAM tracking: {vo_results['translation_magnitude']:.3f}m movement, {len(self.keyframes)} keyframes")
-    
-    def handle_tracking_failure(self, vo_results: Dict, results: Dict):
-        """Handle tracking failure with recovery mechanisms"""
-        self.slam_status = "LOST"
-        results['slam_status'] = "LOST"
-        results['debug_info'] = f"Tracking lost: {vo_results['debug_info']}"
-        
-        # Log tracking issues
-        if self.frame_count % 30 == 0:
-            print(f"⚠️ Enhanced SLAM tracking issue: {vo_results['debug_info']}")
-        
-        # Check if we need recovery
-        frames_since_success = self.frame_count - self.last_successful_frame
-        if frames_since_success > self.max_consecutive_failures:
-            self.initiate_recovery_mode()
-    
-    def update_distance_tracking(self, vo_results: Dict):
-        """Update cumulative distance with validation"""
-        if vo_results['pose_estimated'] and vo_results['translation_magnitude'] > 0:
-            # Validate movement magnitude
-            if vo_results['translation_magnitude'] < 1.0:  # Reasonable movement
-                self.cumulative_distance += vo_results['translation_magnitude']
-            else:
-                print(f"⚠️ Unreasonable movement detected: {vo_results['translation_magnitude']:.3f}m")
-    
-    def initiate_recovery_mode(self):
-        """Initiate recovery mode for persistent failures"""
-        print("🔄 Initiating SLAM recovery mode...")
-        self.recovery_mode = True
-        self.visual_odometry.reset()
-        self.error_count = 0
-        
-        # Reset adaptive parameters to more sensitive values
-        if hasattr(self.visual_odometry, 'adaptive_params'):
-            self.visual_odometry.adaptive_params['min_features'] = 50
-            self.visual_odometry.adaptive_params['detection_threshold'] = 10
-            self.visual_odometry.adaptive_params['match_threshold'] = 0.8
-    
-    def create_enhanced_keyframe(self, color_frame: np.ndarray, depth_frame: np.ndarray, 
-                               pose: np.ndarray, keypoints, descriptors):
-        """Create enhanced keyframe with better data"""
         try:
-            # Extract keypoint coordinates
-            if keypoints:
-                features_2d = np.array([kp.pt for kp in keypoints], dtype=np.float32)
+            with self.results_lock:
+                # Process with SLAM core
+                slam_results = self.slam_core.process_frame(color_frame, depth_frame, timestamp)
                 
-                # Generate 3D points
-                points_3d, valid_indices = self.visual_odometry.enhanced_depth_to_3d(features_2d, depth_frame)
+                # Process distance with validation
+                distance_results = self._process_distance_streamlined(slam_results, timestamp)
                 
-                if len(points_3d) > 0:
-                    # Create keyframe
-                    keyframe = Keyframe(
-                        id=self.current_keyframe_id,
-                        pose=pose.copy(),
-                        features=features_2d[valid_indices],
-                        descriptors=descriptors[valid_indices] if descriptors is not None else np.array([]),
-                        points_3d=points_3d,
-                        timestamp=time.time()
-                    )
-                    
-                    self.keyframes.append(keyframe)
-                    self.current_keyframe_id += 1
-                    
-                    print(f"✅ Created enhanced keyframe {keyframe.id} with {len(points_3d)} 3D points")
-                    
+                # Update agricultural context
+                agricultural_context = self._update_agricultural_context(slam_results)
+                
+                # Create streamlined results
+                results = StreamlinedSLAMResults(
+                    timestamp=timestamp,
+                    pose_estimated=slam_results['pose_estimated'],
+                    position=slam_results['position'].copy(),
+                    rotation=slam_results['rotation'].copy(),
+                    total_distance=slam_results['total_distance'],
+                    precision_distance=distance_results['precision_distance'],
+                    tracking_quality=slam_results.get('tracking_quality', 0.0),
+                    num_features=slam_results['num_features'],
+                    num_keyframes=slam_results['num_keyframes'],
+                    slam_mode=slam_results['slam_mode'],
+                    processing_time=time.time() - processing_start,
+                    agricultural_context=agricultural_context
+                )
+                
+                # Update performance monitoring
+                self._update_performance_monitor(results)
+                
+                # Store current results
+                self.current_results = results
+                
+                # Update initialization status
+                if not self.is_initialized and slam_results['slam_mode'] == "TRACKING":
+                    self.is_initialized = True
+                    print("🌾 Streamlined SLAM initialized and tracking")
+                
+                return results
+                
         except Exception as e:
-            print(f"Error creating keyframe: {e}")
+            print(f"Streamlined SLAM processing error: {e}")
+            # Return safe default results
+            return self._get_default_results(timestamp, processing_start)
     
-    def should_create_keyframe(self, current_pose: np.ndarray) -> bool:
-        """Enhanced keyframe creation decision"""
-        if len(self.keyframes) == 0:
-            return True
-        
-        last_keyframe = self.keyframes[-1]
-        
-        # Calculate translation and rotation differences
-        translation_diff = np.linalg.norm(current_pose[:3, 3] - last_keyframe.pose[:3, 3])
-        
-        # Calculate rotation difference
-        R_diff = current_pose[:3, :3] @ last_keyframe.pose[:3, :3].T
-        angle_diff = np.arccos(np.clip((np.trace(R_diff) - 1) / 2, -1, 1))
-        
-        # Enhanced decision criteria
-        should_create = (translation_diff > self.keyframe_distance_threshold or 
-                        angle_diff > self.keyframe_angle_threshold or
-                        len(self.keyframes) < 2)  # Always create second keyframe
-        
-        return should_create
+    def _process_distance_streamlined(self, slam_results: Dict, timestamp: float) -> Dict:
+        """Streamlined distance processing with essential validation only"""
+        try:
+            if not slam_results['pose_estimated']:
+                return {'precision_distance': self.distance_tracker.get_total_distance()}
+            
+            # Get movement data
+            trajectory = self.slam_core.get_trajectory_3d()
+            if len(trajectory) >= 2:
+                translation = trajectory[-1] - trajectory[-2]
+                rotation = slam_results['rotation']
+                
+                # Process with distance tracker (simplified validation)
+                distance_results = self.distance_tracker.process_movement(
+                    translation=translation,
+                    rotation=rotation,
+                    timestamp=timestamp
+                )
+                
+                return {
+                    'precision_distance': distance_results['cumulative_distance'],
+                    'distance_confidence': distance_results.get('confidence', 0.5),
+                    'validation_passed': distance_results['validation_passed']
+                }
+            
+            return {'precision_distance': self.distance_tracker.get_total_distance()}
+            
+        except Exception as e:
+            print(f"Distance processing error: {e}")
+            return {'precision_distance': self.distance_tracker.get_total_distance()}
     
-    def get_current_pose(self) -> np.ndarray:
-        """Get current camera pose"""
-        return self.last_pose.copy()
+    def _update_agricultural_context(self, slam_results: Dict) -> Dict:
+        """Update agricultural context with essential information only"""
+        try:
+            scene_info = slam_results.get('scene_info', {})
+            
+            # Update essential agricultural stats
+            if scene_info.get('crop_rows_detected', False):
+                self.agricultural_stats['crop_rows_detected'] = True
+            
+            if scene_info.get('ground_plane') is not None:
+                self.agricultural_stats['ground_plane_valid'] = True
+            
+            # Update trajectory point count
+            trajectory = self.slam_core.get_trajectory_3d()
+            self.agricultural_stats['total_trajectory_points'] = len(trajectory)
+            
+            # Calculate approximate field coverage (simplified)
+            if len(trajectory) > 10:
+                # Bounding box area calculation
+                positions = trajectory[-100:]  # Recent 100 points
+                x_coords = positions[:, 0]
+                z_coords = positions[:, 2]
+                
+                x_range = np.max(x_coords) - np.min(x_coords)
+                z_range = np.max(z_coords) - np.min(z_coords)
+                
+                self.agricultural_stats['field_coverage_area'] = x_range * z_range
+            
+            return {
+                'scene_type': scene_info.get('scene_type', 'field'),
+                'crop_rows_detected': self.agricultural_stats['crop_rows_detected'],
+                'ground_plane_valid': self.agricultural_stats['ground_plane_valid'],
+                'field_coverage_m2': self.agricultural_stats['field_coverage_area'],
+                'trajectory_points': self.agricultural_stats['total_trajectory_points']
+            }
+            
+        except Exception as e:
+            print(f"Agricultural context update error: {e}")
+            return {'scene_type': 'field', 'crop_rows_detected': False}
     
-    def get_trajectory(self) -> np.ndarray:
-        """Get trajectory from enhanced visual odometry"""
-        return self.visual_odometry.get_trajectory()
+    def _update_performance_monitor(self, results: StreamlinedSLAMResults):
+        """Update lightweight performance monitoring"""
+        try:
+            # Track processing times
+            self.perf_monitor['processing_times'].append(results.processing_time)
+            
+            # Update FPS calculation
+            if len(self.perf_monitor['processing_times']) >= 10:
+                avg_time = np.mean(list(self.perf_monitor['processing_times']))
+                self.perf_monitor['avg_fps'] = 1.0 / max(avg_time, 0.001)
+            
+            # Track success rate
+            if results.pose_estimated:
+                self.perf_monitor['tracking_success_count'] += 1
+            
+            # Adaptive performance adjustment
+            if self.perf_monitor['avg_fps'] < 15.0 and self.performance_mode == "BALANCED":
+                self.frame_skip_threshold = min(3, self.frame_skip_threshold + 1)
+                print(f"⚡ Adaptive performance: increased frame skip to {self.frame_skip_threshold}")
+            elif self.perf_monitor['avg_fps'] > 25.0 and self.frame_skip_threshold > 1:
+                self.frame_skip_threshold = max(1, self.frame_skip_threshold - 1)
+                print(f"⚡ Adaptive performance: reduced frame skip to {self.frame_skip_threshold}")
+                
+        except Exception as e:
+            print(f"Performance monitor update error: {e}")
     
-    def get_distance_traveled(self) -> float:
-        """Get total distance traveled with enhanced accuracy"""
-        return self.cumulative_distance
+    def _get_default_results(self, timestamp: float, processing_start: float) -> StreamlinedSLAMResults:
+        """Get safe default results in case of errors"""
+        return StreamlinedSLAMResults(
+            timestamp=timestamp,
+            pose_estimated=False,
+            position=np.array([0.0, 0.0, 0.0]),
+            rotation=np.eye(3),
+            total_distance=0.0,
+            precision_distance=self.distance_tracker.get_total_distance(),
+            tracking_quality=0.0,
+            num_features=0,
+            num_keyframes=0,
+            slam_mode="ERROR",
+            processing_time=time.time() - processing_start,
+            agricultural_context={'scene_type': 'unknown', 'crop_rows_detected': False}
+        )
     
-    def get_keyframes(self) -> List[Keyframe]:
-        """Get all keyframes"""
-        return self.keyframes.copy()
+    def get_current_trajectory_3d(self) -> np.ndarray:
+        """Get current 3D trajectory"""
+        return self.slam_core.get_trajectory_3d()
     
-    def get_performance_stats(self) -> Dict:
-        """Get enhanced SLAM performance statistics"""
-        vo_stats = self.visual_odometry.get_performance_stats()
+    def get_distance_comparison(self) -> Dict:
+        """Get comparison between SLAM and precision distance measurements"""
+        slam_distance = self.slam_core.get_total_distance()
+        precision_distance = self.distance_tracker.get_total_distance()
         
         return {
-            'slam_status': self.slam_status,
-            'is_initialized': self.is_initialized,
-            'keyframes_count': len(self.keyframes),
-            'map_points_count': len(self.map_points),
-            'avg_processing_time': np.mean(self.processing_times) if self.processing_times else 0.0,
-            'total_frames': self.frame_count,
-            'distance_traveled': self.cumulative_distance,
-            'trajectory_length': len(self.get_trajectory()),
-            'error_count': self.error_count,
-            'recovery_mode': self.recovery_mode,
-            # Include enhanced VO stats
-            'vo_avg_processing_time': vo_stats['avg_processing_time'],
-            'vo_avg_tracks': vo_stats['avg_tracks'],
-            'vo_pose_estimation_active': vo_stats['pose_estimation_active'],
-            'vo_adaptive_params': vo_stats.get('current_adaptive_params', {})
+            'slam_distance': slam_distance,
+            'precision_distance': precision_distance,
+            'difference': abs(slam_distance - precision_distance),
+            'difference_percentage': abs(slam_distance - precision_distance) / max(slam_distance, 0.001) * 100,
+            'precision_accuracy': self.distance_tracker.get_performance_stats().get('estimated_accuracy', 0.05)
+        }
+    
+    def get_agricultural_summary(self) -> Dict:
+        """Get agricultural mapping summary"""
+        with self.results_lock:
+            trajectory = self.get_current_trajectory_3d()
+            distance_comp = self.get_distance_comparison()
+            
+            return {
+                'session_summary': {
+                    'total_trajectory_points': len(trajectory),
+                    'slam_distance_m': distance_comp['slam_distance'],
+                    'precision_distance_m': distance_comp['precision_distance'],
+                    'accuracy_cm': distance_comp['precision_accuracy'] * 100,
+                    'field_coverage_m2': self.agricultural_stats['field_coverage_area']
+                },
+                'agricultural_features': {
+                    'crop_rows_detected': self.agricultural_stats['crop_rows_detected'],
+                    'ground_plane_estimated': self.agricultural_stats['ground_plane_valid'],
+                    'scene_understanding': 'active'
+                },
+                'performance': {
+                    'avg_fps': self.perf_monitor['avg_fps'],
+                    'tracking_success_rate': (self.perf_monitor['tracking_success_count'] / 
+                                            max(self.perf_monitor['total_frame_count'], 1)) * 100,
+                    'performance_mode': self.performance_mode,
+                    'frame_skip_threshold': self.frame_skip_threshold
+                }
+            }
+    
+    def get_realtime_stats(self) -> Dict:
+        """Get real-time statistics for display"""
+        if not self.current_results:
+            return {'status': 'not_started'}
+        
+        return {
+            'status': 'active',
+            'slam_mode': self.current_results.slam_mode,
+            'tracking_quality': self.current_results.tracking_quality,
+            'position': {
+                'x': float(self.current_results.position[0]),
+                'y': float(self.current_results.position[1]), 
+                'z': float(self.current_results.position[2])
+            },
+            'distances': {
+                'total': self.current_results.total_distance,
+                'precision': self.current_results.precision_distance
+            },
+            'features': self.current_results.num_features,
+            'keyframes': self.current_results.num_keyframes,
+            'performance': {
+                'fps': self.perf_monitor['avg_fps'],
+                'processing_ms': self.current_results.processing_time * 1000
+            },
+            'agricultural': self.current_results.agricultural_context
+        }
+    
+    def save_session_streamlined(self, session_name: str = None) -> str:
+        """Save streamlined session data"""
+        try:
+            if not self.current_results:
+                print("No session data to save")
+                return ""
+            
+            # Get trajectory and summary
+            trajectory = self.get_current_trajectory_3d()
+            summary = self.get_agricultural_summary()
+            
+            # Prepare streamlined session data
+            session_data = {
+                'trajectory_3d': trajectory,
+                'session_summary': summary['session_summary'],
+                'agricultural_features': summary['agricultural_features'],
+                'performance_summary': summary['performance'],
+                'session_metadata': {
+                    'session_name': session_name or f"agricultural_slam_{int(time.time())}",
+                    'timestamp': time.time(),
+                    'slam_version': 'streamlined_v2.0',
+                    'total_frames_processed': self.perf_monitor['total_frame_count'],
+                    'performance_mode': self.performance_mode
+                }
+            }
+            
+            # Save using data logger
+            filepath = self.data_logger.save_trajectory(
+                trajectory,
+                metadata=session_data
+            )
+            
+            print(f"🌾 Streamlined session saved: {filepath}")
+            print(f"   SLAM Distance: {summary['session_summary']['slam_distance_m']:.3f}m")
+            print(f"   Precision Distance: {summary['session_summary']['precision_distance_m']:.3f}m")
+            print(f"   Accuracy: ±{summary['session_summary']['accuracy_cm']:.1f}cm")
+            print(f"   Field Coverage: {summary['session_summary']['field_coverage_m2']:.1f}m²")
+            
+            return filepath
+            
+        except Exception as e:
+            print(f"Error saving streamlined session: {e}")
+            return ""
+    
+    def reset_streamlined(self):
+        """Reset streamlined SLAM system"""
+        with self.results_lock:
+            # Reset core components
+            self.slam_core.reset()
+            self.distance_tracker.reset()
+            
+            # Reset state
+            self.current_results = None
+            self.is_initialized = False
+            self.processing_active = False
+            
+            # Reset performance monitoring
+            self.frame_skip_counter = 0
+            self.perf_monitor = {
+                'avg_fps': 0.0,
+                'processing_times': deque(maxlen=30),
+                'tracking_success_count': 0,
+                'total_frame_count': 0
+            }
+            
+            # Reset agricultural stats
+            self.agricultural_stats = {
+                'crop_rows_detected': False,
+                'ground_plane_valid': False,
+                'field_coverage_area': 0.0,
+                'total_trajectory_points': 0
+            }
+            
+            print("🌾 Streamlined Enhanced SLAM reset successfully")
+
+# Compatibility wrapper for existing code
+class EnhancedCustomVisualSLAM(StreamlinedEnhancedSLAM):
+    """
+    Compatibility wrapper that maintains the existing interface
+    while using the streamlined implementation
+    """
+    
+    def __init__(self, camera_manager: CameraManager, camera_matrix: np.ndarray = None):
+        """Initialize with compatibility for existing interface"""
+        super().__init__(camera_manager)
+        self.camera_matrix = camera_matrix
+        if camera_matrix is not None:
+            print(f"Camera matrix provided: {camera_matrix.shape}")
+    
+    def process_frame(self, color_frame: np.ndarray, depth_frame: np.ndarray, 
+                     timestamp: float = None) -> Dict:
+        """
+        Process frame with compatibility for existing interface
+        Returns dictionary format expected by existing code
+        """
+        # Use streamlined processing
+        results = self.process_frame_streamlined(color_frame, depth_frame, timestamp)
+        
+        # Convert to dictionary format for compatibility
+        return {
+            'timestamp': results.timestamp,
+            'pose_estimated': results.pose_estimated,
+            'position': results.position,
+            'rotation': results.rotation,
+            'total_distance': results.total_distance,
+            'precision_distance': results.precision_distance,
+            'tracking_quality': results.tracking_quality,
+            'num_features': results.num_features,
+            'num_matches': 0,  # Not tracked in streamlined version
+            'num_keyframes': results.num_keyframes,
+            'num_map_points': 0,  # Not tracked in streamlined version
+            'slam_mode': results.slam_mode,
+            'processing_time': results.processing_time,
+            'agricultural_scene': results.agricultural_context,
+            'debug_info': f"{results.slam_mode} - Features: {results.num_features}"
+        }
+    
+    def get_current_pose(self) -> np.ndarray:
+        """Get current pose matrix (compatibility)"""
+        return self.slam_core.get_current_pose()
+    
+    def get_trajectory(self) -> np.ndarray:
+        """Get trajectory (compatibility)"""
+        return self.get_current_trajectory_3d()
+    
+    def get_map_points(self) -> List[np.ndarray]:
+        """Get map points (compatibility)"""
+        map_data = self.slam_core.get_map_data()
+        return [mp.position for mp in map_data['map_points']]
+    
+    def get_statistics(self) -> Dict:
+        """Get statistics (compatibility)"""
+        summary = self.get_agricultural_summary()
+        return {
+            'initialized': self.is_initialized,
+            'tracking': self.current_results.slam_mode == "TRACKING" if self.current_results else False,
+            'frame_count': self.perf_monitor['total_frame_count'],
+            'num_keyframes': self.current_results.num_keyframes if self.current_results else 0,
+            'num_map_points': 0,  # Not tracked in streamlined version
+            'trajectory_length': summary['session_summary']['total_trajectory_points'],
+            'distance_traveled': summary['session_summary']['slam_distance_m'],
+            'avg_processing_time': np.mean(self.perf_monitor['processing_times']) if self.perf_monitor['processing_times'] else 0.0,
+            'avg_features': self.current_results.num_features if self.current_results else 0,
+            'avg_matches': 0  # Not tracked in streamlined version
         }
     
     def reset(self):
-        """Reset enhanced SLAM system"""
-        self.is_initialized = False
-        self.keyframes = []
-        self.current_keyframe_id = 0
-        self.map_points = []
-        self.slam_status = "INITIALIZING"
-        self.last_pose = np.eye(4)
-        self.frame_count = 0
-        self.error_count = 0
-        self.last_successful_frame = 0
-        self.cumulative_distance = 0.0
-        self.last_valid_position = np.array([0.0, 0.0, 0.0])
-        self.recovery_mode = False
-        self.processing_times = []
+        """Reset (compatibility)"""
+        self.reset_streamlined()
+
+# Test function
+def test_streamlined_slam():
+    """Test streamlined enhanced SLAM"""
+    from ..core.camera_manager import CameraManager
+    
+    print("Testing Streamlined Enhanced SLAM...")
+    
+    camera_manager = CameraManager()
+    slam = StreamlinedEnhancedSLAM(camera_manager)
+    
+    # Set performance mode
+    slam.set_performance_mode("BALANCED")
+    
+    # Process test frames
+    for i in range(20):
+        color_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        depth_frame = np.random.randint(500, 3000, (480, 640), dtype=np.uint16)
         
-        # Reset visual odometry
-        self.visual_odometry.reset()
+        results = slam.process_frame_streamlined(color_frame, depth_frame)
         
-        print("✅ Enhanced SLAM system reset") 
+        if i % 5 == 0:
+            print(f"Frame {i}: {results.slam_mode}, "
+                  f"Distance: {results.total_distance:.3f}m, "
+                  f"FPS: {slam.perf_monitor['avg_fps']:.1f}")
+    
+    # Print final summary
+    summary = slam.get_agricultural_summary()
+    print(f"\nFinal Summary:")
+    print(f"  Total frames: {summary['performance']['tracking_success_rate']:.1f}%")
+    print(f"  Average FPS: {summary['performance']['avg_fps']:.1f}")
+    print(f"  Field coverage: {summary['session_summary']['field_coverage_m2']:.1f}m²")
+
+if __name__ == "__main__":
+    test_streamlined_slam()

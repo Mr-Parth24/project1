@@ -1,33 +1,45 @@
-# Intel RealSense D435i Camera Configuration
+# Intel RealSense D435i Camera Configuration - Agricultural Enhanced
 camera:
-  # Camera resolution settings
-  color_width: 640
+  # High-quality resolution for agricultural use
+  color_width: 848
   color_height: 480
-  depth_width: 640
+  depth_width: 848  
   depth_height: 480
   fps: 30
   
-  # Processing settings
+  # Agricultural environment optimization
   enable_depth: true
   enable_color: true
-  enable_imu: false  # We're not using IMU as per requirements
+  enable_imu: false
   
-  # Depth processing
+  # Enhanced depth processing for outdoor use
   depth_filters:
     decimation: true
     spatial: true
     temporal: true
     hole_filling: true
+    threshold: true
   
-  # Auto exposure settings
+  # Outdoor lighting optimization  
   auto_exposure: true
-  exposure: 100  # Used when auto_exposure is false
-  gain: 50       # Used when auto_exposure is false
-
-# GUI Settings
+  exposure: 8500        # Optimized for outdoor use
+  gain: 64             # Moderate gain for good SNR
+  laser_power: 240     # High laser power for outdoor depth
+  
+  # Agricultural specific settings
+  agricultural_mode: true
+  dust_compensation: true
+  vibration_filtering: true
+  
+# Enhanced GUI Settings
 gui:
-  window_title: "Agricultural SLAM System - D435i"
-  window_width: 1200
-  window_height: 800
-  camera_display_width: 640
+  window_title: "Agricultural SLAM System v2.0 - Enhanced"
+  window_width: 1600
+  window_height: 1000
+  camera_display_width: 848
   camera_display_height: 480
+  
+  # Performance settings
+  target_fps: 30
+  enable_3d_visualization: true
+  enable_performance_monitoring: true

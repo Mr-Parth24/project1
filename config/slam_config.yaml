@@ -1,50 +1,74 @@
-# SLAM Configuration for Agricultural Equipment Tracking
+# Enhanced SLAM Configuration for Agricultural Equipment Tracking
 slam:
-  # Feature detection settings
-  max_features: 1000
-  min_features_for_tracking: 30
-  min_features_for_keyframe: 50
+  # Enhanced feature detection
+  max_features: 2000
+  min_features_for_tracking: 50
+  min_features_for_keyframe: 75
   
-  # Visual odometry settings
-  min_matches: 8                        # Increased for more reliable estimation
-  ransac_threshold: 3.0                 # Reduced for stricter outlier rejection
-  ransac_iterations: 500
-  max_translation_per_frame: 5.0        # Reduced from 10.0 meters
-  max_rotation_per_frame: 1.57          # 90 degrees max rotation
+  # Robust visual odometry for agricultural environments
+  min_matches: 12
+  ransac_threshold: 2.0
+  ransac_iterations: 1000
+  max_translation_per_frame: 3.0
+  max_rotation_per_frame: 1.0
   
-  # Movement filtering (CRITICAL for stationary detection)
-  min_translation_threshold: 0.10       # Increased to 10cm - more aggressive filtering
-  min_rotation_threshold: 0.087         # 5 degrees in radians
-  stationary_threshold: 0.10            # Must move at least 10cm to register
-  movement_consistency_threshold: 0.05  # For movement validation
+  # Agricultural movement filtering (enhanced)
+  min_translation_threshold: 0.05      # 5cm minimum movement
+  min_rotation_threshold: 0.087        # 5 degrees
+  stationary_threshold: 0.05           # 5cm stationary detection
+  movement_consistency_threshold: 0.03 
   
-  # Keyframe creation thresholds (more conservative)
-  keyframe_distance_threshold: 0.25     # Increased to 25cm
-  keyframe_angle_threshold: 0.174       # 10 degrees in radians
+  # Keyframe creation (agricultural optimized)
+  keyframe_distance_threshold: 0.3     # 30cm
+  keyframe_angle_threshold: 0.174      # 10 degrees
   
-  # Agricultural-specific settings
-  field_mode: true
+  # Agricultural-specific features
+  agricultural_mode: true
+  crop_row_detection: true
+  ground_plane_estimation: true
+  field_boundary_tracking: true
   robust_tracking: true
   loop_closure_enabled: true
-  filter_small_movements: true          # Enable aggressive noise filtering
-  stationary_detection_enabled: true   # Enable stationary detection
+  filter_small_movements: true
+  stationary_detection_enabled: true
   
-# Camera calibration (D435i defaults)
+  # Performance optimization
+  adaptive_thresholding: true
+  performance_monitoring: true
+  gpu_acceleration: false  # Set to true if OpenGL available
+  
+# Enhanced Camera calibration (D435i agricultural optimized)  
 camera_calibration:
-  fx: 607.4
-  fy: 607.4
-  cx: 319.5
-  cy: 239.5
+  fx: 615.0
+  fy: 615.0
+  cx: 424.0    # Adjusted for 848x480 resolution
+  cy: 240.0
   
-  # Distortion coefficients
+  # Enhanced distortion model
   k1: 0.0
   k2: 0.0
   p1: 0.0
   p2: 0.0
   k3: 0.0
+  
+  # Agricultural calibration validation
+  agricultural_validated: false
+  reprojection_error_threshold: 1.0
+  outdoor_suitability_threshold: 0.7
 
-# Trajectory settings
+# Enhanced trajectory settings
 trajectory:
   save_format: "npz"
-  auto_save: false
-  max_points: 10000
+  auto_save: true
+  save_interval_seconds: 300  # Auto-save every 5 minutes
+  max_points: 20000
+  precision_tracking: true
+  distance_validation: true
+  
+# Performance monitoring
+performance:
+  enable_monitoring: true
+  target_fps: 30
+  alert_on_low_fps: true
+  alert_on_high_cpu: true
+  export_reports: true

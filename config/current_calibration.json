@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "camera_matrix": [
+    [
+      662.4246524900873,
+      0.0,
+      281.1258804403675
+    ],
+    [
+      0.0,
+      642.0484269873001,
+      189.3433556152162
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion_coefficients": [
+    [
+      0.09331549699241877,
+      0.1482975561321935,
+      -0.002405318324594376,
+      -0.022276378536796558,
+      -0.6920213921974423
+    ]
+  ],
+  "reprojection_error": 0.031273432267971954,
+  "frames_used": 12,
+  "image_size": [
+    640,
+    480
+  ],
+  "user": "Mr-Parth24",
+  "completion_time": "2025-06-20 23:28:21",
+  "checkerboard_info": {
+    "size": [
+      9,
+      9
+    ],
+    "square_size_mm": 40,
+    "board_type": "mr_parth24_working_10x10"
+  },
+  "metadata": {
+    "calibration_type": "automatic_agricultural_d435i_10x10",
+    "user": "Mr-Parth24",
+    "date": "2025-06-20 23:28:21",
+    "version": "working_fix_v1"
+  }
+}
