@@ -177,17 +177,8 @@ class CameraManager:
                 
                 print(f"📏 Depth stream configured: {self.actual_depth_width}x{self.actual_depth_height} @ {cam_config['fps']}fps (Z16)")
             
-            # Start pipeline
-            profile = self.pipeline.start(self.config_rs)
-            
-            # FIXED: Verify actual stream properties
-            self._verify_stream_properties(profile)
-            
-            # Get device and set agricultural-optimized options
-            device = profile.get_device()
-            self._configure_agricultural_settings(device, cam_config)
-            
-            print("✅ Camera initialized successfully with agricultural optimization")
+            # FIXED: Don't start pipeline here - let start_streaming() handle it
+            print("✅ Camera configured successfully with agricultural optimization")
             return True
             
         except Exception as e:
@@ -289,21 +280,36 @@ class CameraManager:
             
             print("🌾 Agricultural camera settings applied successfully")
             
-        except Exception as e:
-            print(f"❌ Agricultural settings configuration error: {e}")
+        except Exception as e:            print(f"❌ Agricultural settings configuration error: {e}")
     
     def start_streaming(self) -> bool:
-        """Start camera streaming"""
+        """FIXED: Start camera streaming (actually starts the pipeline)"""
         if not self.pipeline:
             print("❌ Camera not initialized. Call initialize_camera() first.")
             return False
         
+        if self.is_streaming:
+            print("⚠️  Camera is already streaming")
+            return True
+        
         try:
+            # Start pipeline with verification and configuration
+            profile = self.pipeline.start(self.config_rs)
+            
+            # FIXED: Verify actual stream properties
+            self._verify_stream_properties(profile)
+            
+            # Get device and set agricultural-optimized options
+            device = profile.get_device()
+            cam_config = self.config['camera']
+            self._configure_agricultural_settings(device, cam_config)
+            
             self.is_streaming = True
             self.frame_count = 0
             self.last_frame_time = time.time()
             print("▶️  Camera streaming started")
             return True
+            
         except Exception as e:
             print(f"❌ Failed to start streaming: {e}")
             return False
@@ -567,8 +573,7 @@ class CameraManager:
                 'frame_count': self.frame_count,
                 'dropped_frames': self.dropped_frames
             }
-            
-            # Add device-specific info if available
+              # Add device-specific info if available
             if self.pipeline:
                 try:
                     profile = self.pipeline.get_active_profile()
@@ -586,10 +591,16 @@ class CameraManager:
             return {'error': str(e)}
     
     def stop_streaming(self):
-        """Stop camera streaming"""
+        """FIXED: Stop camera streaming safely"""
+        if not self.is_streaming:
+            print("ℹ️  Camera is already stopped")
+            return
+            
         self.is_streaming = False
+        
         if self.pipeline:
             try:
+                # Only stop if the pipeline is actually running
                 self.pipeline.stop()
                 print("⏹️  Camera streaming stopped")
                 
@@ -598,7 +609,11 @@ class CameraManager:
                 print(f"📊 Final stats: {final_stats['frame_count']} frames, {final_stats['dropped_frames']} dropped")
                 
             except Exception as e:
-                print(f"❌ Error stopping pipeline: {e}")
+                # This is expected if pipeline was never started
+                if "stop() cannot be called before start()" in str(e):
+                    print("ℹ️  Pipeline was not running")
+                else:
+                    print(f"❌ Error stopping pipeline: {e}")
     
     def __del__(self):
         """Cleanup when object is destroyed"""

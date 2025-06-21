@@ -1,45 +1,81 @@
-# Intel RealSense D435i Camera Configuration - Agricultural Enhanced
+# Intel RealSense D435i Camera Configuration
+# Version: 2.2
+# Use Case: Agricultural SLAM & Computer Vision
+# Notes: Switched to a guaranteed compatible profile (640x480 @ 30fps BGR8).
+
 camera:
-  # High-quality resolution for agricultural use
-  color_width: 848
+  # --- Core Stream Configuration ---
+  # NOTE: Using a standard, highly-compatible profile to resolve hardware support errors.
+  # This combination of resolution, FPS, and format (BGR8) is validated for the D435i.
+  color_width: 640
   color_height: 480
-  depth_width: 848  
+  depth_width: 640   # Match depth resolution to color for easier alignment
   depth_height: 480
   fps: 30
-  
-  # Agricultural environment optimization
+
+  # ... (rest of your configuration remains the same) ...
+
+  # --- Enabled Hardware Streams ---
+  # IMU is highly recommended for SLAM in environments with vibration.
   enable_depth: true
   enable_color: true
-  enable_imu: false
-  
-  # Enhanced depth processing for outdoor use
-  depth_filters:
-    decimation: true
-    spatial: true
-    temporal: true
-    hole_filling: true
-    threshold: true
-  
-  # Outdoor lighting optimization  
+  enable_imu: true
+
+  # --- Advanced Control & Presets ---
+  # Path to a JSON file with advanced depth settings.
+  # Export this from the RealSense Viewer after tuning.
+  # Example presets: "High Accuracy", "Hand Gesture", etc.
+  json_preset_path: "HighAccuracyPreset.json" # Recommended
+
+  # --- Manual Sensor Control for Outdoor Environments ---
+  # auto_exposure should be true for changing lighting, but manual values are set below.
+  # The SDK will use these as a starting point.
   auto_exposure: true
-  exposure: 8500        # Optimized for outdoor use
-  gain: 64             # Moderate gain for good SNR
-  laser_power: 240     # High laser power for outdoor depth
-  
-  # Agricultural specific settings
+  exposure: 8500        # us (microseconds). Valid range often 1-10000.
+  gain: 64              # Valid range often 16-248.
+  laser_power: 240      # mW. Max is typically 360. Higher power improves depth in sunlight.
+
+  # --- Post-Processing Depth Filters ---
+  # These filters improve depth map quality by reducing noise and filling gaps.
+  depth_filters:
+    decimation:
+      enabled: true
+      magnitude: 2
+    spatial:
+      enabled: true
+      magnitude: 2
+      smooth_alpha: 0.5
+      smooth_delta: 20
+      hole_fill: 0
+    temporal:
+      enabled: true
+      smooth_alpha: 0.4
+      smooth_delta: 20
+    hole_filling:
+      enabled: true
+      mode: 1 # 1 = Farest-from, 2 = Nearest-to
+    threshold:
+      enabled: true
+      min_distance: 0.1 # meters
+      max_distance: 8.0 # meters
+
+# --- Application-Specific Parameters ---
+# These settings are NOT native to the RealSense SDK.
+# Your application code must implement the logic for them.
+app_specific:
   agricultural_mode: true
-  dust_compensation: true
-  vibration_filtering: true
-  
-# Enhanced GUI Settings
+  dust_compensation_level: 2 # Example: 0=off, 1=low, 2=high
+  vibration_filter_intensity: 0.8 # Example: 0.0 to 1.0
+
+# --- Enhanced GUI Settings ---
 gui:
-  window_title: "Agricultural SLAM System v2.0 - Enhanced"
+  window_title: "Agricultural SLAM System v2.1 - Enhanced"
   window_width: 1600
-  window_height: 1000
+  window_height: 900
   camera_display_width: 848
   camera_display_height: 480
-  
-  # Performance settings
-  target_fps: 30
+
+  # --- Performance Monitoring ---
+  target_fps: 60 # Match the camera's FPS
   enable_3d_visualization: true
   enable_performance_monitoring: true

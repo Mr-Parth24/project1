@@ -771,15 +771,24 @@ class CameraWidget(EnhancedCameraWidget):
     """
     FIXED: Compatibility wrapper for existing code
     Maintains the original interface while using enhanced implementation
-    """
-    
+    """    
     def __init__(self, width: int = 640, height: int = 480):
         super().__init__(width, height)
         print(f"🎥 Legacy CameraWidget wrapper initialized (FIXED)")
     
-    def update_frame(self, frame: np.ndarray):
-        """FIXED: Update with single frame (compatibility method)"""
-        super().update_frame(frame)
+    def update_frame(self, frame: np.ndarray = None, color_frame: np.ndarray = None, 
+                    depth_frame: np.ndarray = None, features: List = None, 
+                    matches: List = None, agricultural_features: Dict = None):
+        """FIXED: Update frame with enhanced compatibility (supports both old and new calling conventions)"""
+        # Handle both calling conventions
+        if frame is not None and color_frame is None:
+            # Old single-frame calling convention
+            super().update_frame(frame, None, features, matches, agricultural_features)
+        elif color_frame is not None:
+            # New multi-parameter calling convention
+            super().update_frame(color_frame, depth_frame, features, matches, agricultural_features)
+        else:
+            print("⚠️  CameraWidget.update_frame: No valid frame provided")
     
     def set_show_features(self, show: bool):
         """Set feature display (compatibility method)"""
