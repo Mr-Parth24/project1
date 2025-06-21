@@ -2,6 +2,7 @@
 Agricultural SLAM Core Engine
 Main SLAM pipeline optimized for agricultural environments
 Based on ORB-SLAM3 with agricultural scene understanding
+FIXED: Data structure compatibility with camera widget
 """
 
 import numpy as np
@@ -41,8 +42,28 @@ class MapPoint:
     reliability: float
     point_type: str  # 'ground', 'crop', 'structure', 'sky'
 
+# ============ CRITICAL FIX: Added structured data classes ============
+@dataclass
+class CropRowDetection:
+    """Structured crop row detection result for camera widget compatibility"""
+    start_point: Tuple[int, int]
+    end_point: Tuple[int, int]
+    confidence: float
+    length: float
+    angle: float
+    row_id: int
+
+@dataclass
+class GroundPlaneDetection:
+    """Structured ground plane detection result"""
+    plane_equation: np.ndarray
+    confidence: float
+    inlier_count: int
+    distance_to_camera: float
+    normal_vector: np.ndarray
+
 class AgriculturalSceneAnalyzer:
-    """Analyzes agricultural scenes for SLAM optimization"""
+    """Analyzes agricultural scenes for SLAM optimization - FIXED DATA STRUCTURES"""
     
     def __init__(self):
         self.crop_row_detector = self._init_crop_row_detector()
@@ -66,28 +87,33 @@ class AgriculturalSceneAnalyzer:
         }
     
     def analyze_scene(self, color_frame: np.ndarray, depth_frame: np.ndarray) -> Dict:
-        """Analyze agricultural scene characteristics"""
+        """Analyze agricultural scene characteristics - FIXED OUTPUT FORMAT"""
         try:
             scene_info = {
                 'scene_type': 'field',
                 'crop_rows_detected': False,
-                'ground_plane': None,
+                'crop_rows': [],  # Will contain CropRowDetection objects
+                'ground_plane': None,  # Will contain GroundPlaneDetection object
                 'structure_density': 0.0,
                 'sky_ratio': 0.0,
-                'recommended_features': 'orb'
+                'recommended_features': 'orb',
+                'scene_complexity': 0.0,
+                'lighting_quality': 0.0,
+                'agricultural_score': 0.0
             }
             
             # Convert to grayscale for analysis
             gray = cv2.cvtColor(color_frame, cv2.COLOR_BGR2GRAY)
             
-            # Detect crop rows using Hough lines
+            # FIXED: Detect crop rows with structured output
             crop_rows = self._detect_crop_rows(gray)
             if len(crop_rows) >= 2:
                 scene_info['crop_rows_detected'] = True
+                scene_info['crop_rows'] = crop_rows
                 scene_info['scene_type'] = 'crop_rows'
                 scene_info['recommended_features'] = 'lines_and_points'
             
-            # Estimate ground plane
+            # FIXED: Estimate ground plane with structured output
             ground_plane = self._estimate_ground_plane(depth_frame)
             if ground_plane is not None:
                 scene_info['ground_plane'] = ground_plane
@@ -105,14 +131,27 @@ class AgriculturalSceneAnalyzer:
             structure_pixels = np.sum(gradient_magnitude > 50)
             scene_info['structure_density'] = structure_pixels / gradient_magnitude.size
             
+            # FIXED: Calculate additional metrics for camera widget
+            scene_info['scene_complexity'] = min(1.0, scene_info['structure_density'] * 2.0)
+            scene_info['lighting_quality'] = self._assess_lighting_quality(gray)
+            scene_info['agricultural_score'] = self._calculate_agricultural_score(scene_info)
+            
             return scene_info
             
         except Exception as e:
             print(f"Scene analysis error: {e}")
-            return {'scene_type': 'field', 'crop_rows_detected': False}
+            return {
+                'scene_type': 'field', 
+                'crop_rows_detected': False,
+                'crop_rows': [],
+                'ground_plane': None,
+                'scene_complexity': 0.0,
+                'lighting_quality': 0.5,
+                'agricultural_score': 0.0
+            }
     
-    def _detect_crop_rows(self, gray_frame: np.ndarray) -> List:
-        """Detect crop rows using Hough line detection"""
+    def _detect_crop_rows(self, gray_frame: np.ndarray) -> List[CropRowDetection]:
+        """FIXED: Detect crop rows with structured output for camera widget"""
         try:
             # Edge detection optimized for crop rows
             edges = cv2.Canny(gray_frame, 50, 150, apertureSize=3)
@@ -130,41 +169,98 @@ class AgriculturalSceneAnalyzer:
             if lines is None:
                 return []
             
+            # FIXED: Convert raw lines to structured objects
+            crop_rows = []
+            for row_id, line in enumerate(lines):
+                x1, y1, x2, y2 = line[0]
+                
+                # Calculate line properties
+                length = np.sqrt((x2-x1)**2 + (y2-y1)**2)
+                angle = np.arctan2(y2-y1, x2-x1)
+                
+                # Calculate confidence based on multiple factors
+                length_score = min(1.0, length / 200.0)  # Normalize by expected min length
+                position_score = self._calculate_position_score(x1, y1, x2, y2, gray_frame.shape)
+                confidence = (length_score + position_score) / 2.0
+                
+                # Create structured crop row object
+                crop_row = CropRowDetection(
+                    start_point=(int(x1), int(y1)),
+                    end_point=(int(x2), int(y2)),
+                    confidence=float(confidence),
+                    length=float(length),
+                    angle=float(angle),
+                    row_id=row_id
+                )
+                crop_rows.append(crop_row)
+            
             # Filter for parallel lines (crop rows are typically parallel)
-            parallel_lines = self._filter_parallel_lines(lines)
-            return parallel_lines
+            parallel_crop_rows = self._filter_parallel_crop_rows(crop_rows)
+            
+            print(f"🌾 Detected {len(parallel_crop_rows)} crop rows with structured data")
+            return parallel_crop_rows
             
         except Exception as e:
             print(f"Crop row detection error: {e}")
             return []
     
-    def _filter_parallel_lines(self, lines: np.ndarray) -> List:
-        """Filter lines to find parallel crop rows"""
-        if len(lines) < 2:
-            return []
-        
-        parallel_groups = []
-        threshold = self.crop_row_detector['parallel_threshold']
-        
-        for i, line1 in enumerate(lines):
-            x1, y1, x2, y2 = line1[0]
-            angle1 = math.atan2(y2 - y1, x2 - x1)
+    def _calculate_position_score(self, x1: int, y1: int, x2: int, y2: int, frame_shape: Tuple) -> float:
+        """Calculate position-based confidence score for crop row"""
+        try:
+            height, width = frame_shape
             
-            group = [line1]
-            for j, line2 in enumerate(lines[i+1:], i+1):
-                x1, y1, x2, y2 = line2[0]
-                angle2 = math.atan2(y2 - y1, x2 - x1)
-                
-                if abs(angle1 - angle2) < threshold:
-                    group.append(line2)
+            # Prefer lines in lower 2/3 of image (where crop rows typically appear)
+            avg_y = (y1 + y2) / 2
+            vertical_position_score = 1.0 if avg_y > height / 3 else 0.5
             
-            if len(group) >= 2:
-                parallel_groups.extend(group)
-        
-        return parallel_groups
+            # Prefer longer lines that span more of the image width
+            line_width = abs(x2 - x1)
+            width_coverage_score = min(1.0, line_width / (width * 0.3))  # 30% width coverage is good
+            
+            return (vertical_position_score + width_coverage_score) / 2.0
+            
+        except Exception as e:
+            print(f"Position score calculation error: {e}")
+            return 0.5
     
-    def _estimate_ground_plane(self, depth_frame: np.ndarray) -> Optional[np.ndarray]:
-        """Estimate ground plane using RANSAC"""
+    def _filter_parallel_crop_rows(self, crop_rows: List[CropRowDetection]) -> List[CropRowDetection]:
+        """Filter crop rows to find parallel ones (enhanced from original)"""
+        if len(crop_rows) < 2:
+            return crop_rows
+        
+        try:
+            parallel_groups = []
+            threshold = self.crop_row_detector['parallel_threshold']
+            
+            for i, crop_row1 in enumerate(crop_rows):
+                group = [crop_row1]
+                angle1 = crop_row1.angle
+                
+                for j, crop_row2 in enumerate(crop_rows[i+1:], i+1):
+                    angle2 = crop_row2.angle
+                    
+                    if abs(angle1 - angle2) < threshold:
+                        group.append(crop_row2)
+                
+                if len(group) >= 2:
+                    parallel_groups.extend(group)
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_parallel_rows = []
+            for row in parallel_groups:
+                if row.row_id not in seen:
+                    seen.add(row.row_id)
+                    unique_parallel_rows.append(row)
+            
+            return unique_parallel_rows
+            
+        except Exception as e:
+            print(f"Parallel filtering error: {e}")
+            return crop_rows
+    
+    def _estimate_ground_plane(self, depth_frame: np.ndarray) -> Optional[GroundPlaneDetection]:
+        """FIXED: Estimate ground plane with structured output"""
         try:
             # Sample points from lower portion of depth image
             height, width = depth_frame.shape
@@ -193,6 +289,7 @@ class AgriculturalSceneAnalyzer:
             # RANSAC plane fitting
             best_plane = None
             best_inliers = 0
+            best_normal = None
             
             for _ in range(self.ground_plane_estimator['max_iterations']):
                 # Sample 3 random points
@@ -217,19 +314,94 @@ class AgriculturalSceneAnalyzer:
                 if inliers > best_inliers:
                     best_inliers = inliers
                     best_plane = np.append(normal, d)
+                    best_normal = normal.copy()
             
             if best_inliers >= self.ground_plane_estimator['min_inliers']:
-                return best_plane
+                # FIXED: Return structured ground plane object
+                confidence = best_inliers / len(points_3d)
+                distance_to_camera = abs(best_plane[3])
+                
+                ground_plane = GroundPlaneDetection(
+                    plane_equation=best_plane,
+                    confidence=float(confidence),
+                    inlier_count=int(best_inliers),
+                    distance_to_camera=float(distance_to_camera),
+                    normal_vector=best_normal
+                )
+                
+                print(f"🌾 Ground plane detected: confidence={confidence:.2f}, distance={distance_to_camera:.2f}m")
+                return ground_plane
             
             return None
             
         except Exception as e:
             print(f"Ground plane estimation error: {e}")
             return None
+    
+    def _assess_lighting_quality(self, gray_frame: np.ndarray) -> float:
+        """Assess lighting quality for agricultural scenes"""
+        try:
+            # Calculate histogram statistics
+            hist = cv2.calcHist([gray_frame], [0], None, [256], [0, 256])
+            
+            # Good lighting should have well-distributed intensities
+            hist_normalized = hist / hist.sum()
+            
+            # Calculate entropy (higher entropy = better distributed intensities)
+            entropy = -np.sum(hist_normalized * np.log(hist_normalized + 1e-10))
+            entropy_normalized = entropy / np.log(256)  # Normalize to 0-1
+            
+            # Check for saturation (very bright or very dark pixels)
+            dark_pixels = np.sum(hist_normalized[:50])  # Very dark
+            bright_pixels = np.sum(hist_normalized[200:])  # Very bright
+            saturation_penalty = dark_pixels + bright_pixels
+            
+            lighting_quality = entropy_normalized * (1.0 - saturation_penalty)
+            return float(np.clip(lighting_quality, 0.0, 1.0))
+            
+        except Exception as e:
+            print(f"Lighting quality assessment error: {e}")
+            return 0.5
+    
+    def _calculate_agricultural_score(self, scene_info: Dict) -> float:
+        """Calculate overall agricultural scene score"""
+        try:
+            score_components = []
+            
+            # Crop row detection score
+            if scene_info['crop_rows_detected']:
+                crop_row_score = min(1.0, len(scene_info['crop_rows']) / 5.0)  # Normalize by expected count
+                score_components.append(crop_row_score * 0.4)  # 40% weight
+            
+            # Ground plane score
+            if scene_info['ground_plane'] is not None:
+                ground_score = scene_info['ground_plane'].confidence
+                score_components.append(ground_score * 0.3)  # 30% weight
+            
+            # Lighting quality score
+            lighting_score = scene_info['lighting_quality']
+            score_components.append(lighting_score * 0.2)  # 20% weight
+            
+            # Scene complexity score (moderate complexity is good)
+            complexity = scene_info['scene_complexity']
+            complexity_score = 1.0 - abs(complexity - 0.5) * 2  # Peak at 0.5 complexity
+            score_components.append(complexity_score * 0.1)  # 10% weight
+            
+            # Calculate weighted average
+            if score_components:
+                agricultural_score = sum(score_components)
+            else:
+                agricultural_score = 0.0
+            
+            return float(np.clip(agricultural_score, 0.0, 1.0))
+            
+        except Exception as e:
+            print(f"Agricultural score calculation error: {e}")
+            return 0.0
 
 class AgriSLAMCore:
     """
-    Main Agricultural SLAM Core Engine
+    Main Agricultural SLAM Core Engine - FIXED FOR CAMERA WIDGET COMPATIBILITY
     Implements real-time SLAM optimized for agricultural environments
     """
     
@@ -273,11 +445,12 @@ class AgriSLAMCore:
         # Distance tracking with validation
         self.distance_validator = self._init_distance_validator()
         
-        print("Agricultural SLAM Core initialized:")
+        print("🌾 Agricultural SLAM Core initialized (FIXED VERSION):")
         print(f"  - Visual odometry: Enhanced precision mode")
         print(f"  - Feature detection: Adaptive agricultural mode")
-        print(f"  - Scene analysis: Crop rows + ground plane")
+        print(f"  - Scene analysis: Structured crop rows + ground plane")
         print(f"  - Distance tracking: Centimeter precision")
+        print(f"  - Camera widget compatibility: ✅ FIXED")
     
     def _init_distance_validator(self) -> Dict:
         """Initialize distance measurement validator"""
@@ -292,7 +465,7 @@ class AgriSLAMCore:
     def process_frame(self, color_frame: np.ndarray, depth_frame: np.ndarray, 
                      timestamp: float) -> Dict:
         """
-        Main frame processing pipeline for agricultural SLAM
+        FIXED: Main frame processing pipeline with proper data structures
         
         Args:
             color_frame: RGB color image
@@ -300,12 +473,12 @@ class AgriSLAMCore:
             timestamp: Frame timestamp
             
         Returns:
-            Dictionary with SLAM results
+            Dictionary with SLAM results (FIXED FORMAT)
         """
         start_time = time.time()
         
         with self.processing_lock:
-            # Initialize results
+            # Initialize results with proper structure
             results = {
                 'timestamp': timestamp,
                 'slam_mode': self.slam_mode,
@@ -319,14 +492,16 @@ class AgriSLAMCore:
                 'total_distance': self.total_distance,
                 'processing_time': 0.0,
                 'tracking_quality': 0.0,
-                'scene_info': {},
+                'agricultural_scene': {},  # FIXED: Proper key name
+                'scene_info': {},  # Maintain backward compatibility
                 'debug_info': 'Processing...'
             }
             
             try:
-                # Analyze agricultural scene
+                # FIXED: Analyze agricultural scene with structured output
                 scene_info = self.scene_analyzer.analyze_scene(color_frame, depth_frame)
-                results['scene_info'] = scene_info
+                results['agricultural_scene'] = scene_info  # Primary key for camera widget
+                results['scene_info'] = scene_info  # Backward compatibility
                 
                 # Process with visual odometry
                 vo_results = self.visual_odometry.process_frame(color_frame, depth_frame)
@@ -350,7 +525,7 @@ class AgriSLAMCore:
                             self.is_tracking = True
                             self.slam_mode = "TRACKING"
                             results['debug_info'] = "Agricultural SLAM initialized successfully"
-                            print("🌾 Agricultural SLAM initialized with scene understanding")
+                            print("🌾 Agricultural SLAM initialized with structured scene understanding")
                         else:
                             self.slam_mode = "INITIALIZING"
                             results['debug_info'] = "Waiting for sufficient features for initialization"
@@ -397,6 +572,12 @@ class AgriSLAMCore:
                 self.frame_count += 1
                 self.latest_results = results.copy()
                 
+                # FIXED: Log structured data occasionally
+                if self.frame_count % 100 == 0:
+                    crop_count = len(scene_info.get('crop_rows', []))
+                    ground_detected = scene_info.get('ground_plane') is not None
+                    print(f"🌾 Frame {self.frame_count}: {crop_count} crop rows, ground plane: {ground_detected}")
+                
                 return results
                 
             except Exception as e:
@@ -405,6 +586,7 @@ class AgriSLAMCore:
                 results['slam_mode'] = "ERROR"
                 return results
     
+    # ============ REST OF METHODS UNCHANGED (for brevity) ============
     def _initialize_slam(self, color_frame: np.ndarray, depth_frame: np.ndarray,
                         vo_results: Dict, scene_info: Dict, timestamp: float) -> bool:
         """Initialize SLAM with first keyframe"""
@@ -728,7 +910,7 @@ class AgriSLAMCore:
             self.distance_validator['movement_window'].clear()
             self.distance_validator['scale_estimates'].clear()
             
-            print("🌾 Agricultural SLAM Core reset successfully")
+            print("🌾 Agricultural SLAM Core reset successfully (FIXED VERSION)")
     
     def save_session(self, filename: str = None) -> str:
         """Save current SLAM session data"""
@@ -742,8 +924,9 @@ class AgriSLAMCore:
                     'frame_count': self.frame_count,
                     'session_metadata': {
                         'start_time': time.time(),
-                        'slam_version': '1.0',
-                        'agricultural_optimized': True
+                        'slam_version': '1.0_FIXED',
+                        'agricultural_optimized': True,
+                        'structured_features': True
                     }
                 }
                 
@@ -752,7 +935,7 @@ class AgriSLAMCore:
                     metadata=session_data
                 )
                 
-                print(f"🌾 SLAM session saved: {filepath}")
+                print(f"🌾 SLAM session saved (FIXED VERSION): {filepath}")
                 return filepath
                 
         except Exception as e:
