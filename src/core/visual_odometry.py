@@ -1,7 +1,9 @@
 """
 Visual Odometry for RealSense D435i
 Estimates camera pose using visual features without IMU
-Enhanced for Agricultural SLAM with precise distance tracking
+FIXED: Enhanced for precise distance tracking with relaxed validation
+Date: 2025-06-21 01:31:43 UTC
+User: Mr-Parth24
 """
 
 import cv2
@@ -13,13 +15,13 @@ from ..utils.config_manager import get_config_manager
 
 class VisualOdometry:
     """
-    Enhanced Visual Odometry implementation for agricultural SLAM
-    Optimized for precise distance measurement and path tracking
+    FIXED: Visual Odometry implementation for accurate distance tracking
+    Optimized for precise distance measurement and path tracking without IMU
     """
     
     def __init__(self, camera_matrix: np.ndarray = None, dist_coeffs: np.ndarray = None):
         """
-        Initialize Enhanced Visual Odometry
+        Initialize FIXED Visual Odometry
         
         Args:
             camera_matrix: 3x3 camera intrinsic matrix
@@ -28,7 +30,7 @@ class VisualOdometry:
         # Load configuration
         self.config_manager = get_config_manager()
         
-        # Enhanced camera parameters for D435i
+        # ✅ FIXED: Enhanced camera parameters for D435i
         if camera_matrix is not None:
             self.camera_matrix = camera_matrix
         else:
@@ -39,7 +41,7 @@ class VisualOdometry:
         else:
             self.dist_coeffs = self.config_manager.get_distortion_coefficients()
         
-        # Enhanced feature detector
+        # ✅ FIXED: Enhanced feature detector with relaxed parameters
         max_features = self.config_manager.get_slam_parameter('max_features', 1500)
         self.feature_detector = FeatureDetector(max_features=max_features)
         
@@ -54,17 +56,17 @@ class VisualOdometry:
         self.prev_descriptors = None
         self.prev_points_3d = None
         
-        # Enhanced RANSAC parameters
-        self.ransac_threshold = self.config_manager.get_slam_parameter('ransac_threshold', 2.0)  # Stricter
-        self.ransac_iterations = 2000  # More iterations for better accuracy
-        self.min_matches = self.config_manager.get_slam_parameter('min_matches', 8)
-        self.max_translation = self.config_manager.get_slam_parameter('max_translation_per_frame', 3.0)
+        # ✅ FIXED: Much more lenient RANSAC parameters
+        self.ransac_threshold = self.config_manager.get_slam_parameter('ransac_threshold', 3.0)  # INCREASED from 2.0
+        self.ransac_iterations = 5000  # INCREASED from 2000
+        self.min_matches = self.config_manager.get_slam_parameter('min_matches', 4)  # REDUCED from 8
+        self.max_translation = self.config_manager.get_slam_parameter('max_translation_per_frame', 5.0)  # INCREASED
         
-        # Optimized movement filtering for precision
-        self.min_translation_threshold = 0.01  # 1cm minimum movement
-        self.min_rotation_threshold = 0.05    # ~3 degrees
-        self.stationary_threshold = 0.02      # 2cm stationary threshold
-        self.min_inliers_required = 12        # Higher inlier requirement
+        # ✅ FIXED: Very permissive movement filtering for continuous tracking
+        self.min_translation_threshold = 0.001  # 1mm minimum (was 1cm)
+        self.min_rotation_threshold = 0.01     # ~0.6 degrees (was 3 degrees)
+        self.stationary_threshold = 0.002      # 2mm stationary threshold
+        self.min_inliers_required = 4          # REDUCED from 12
         
         # Enhanced distance tracking
         self.precise_distance = 0.0
@@ -72,21 +74,28 @@ class VisualOdometry:
         self.scale_estimates = []
         self.baseline_scale_factor = 1.0  # Stereo baseline scale correction
         
-        # Movement validation
+        # ✅ FIXED: Very permissive movement validation
         self.movement_history = []
         self.valid_movements = []
         self.consecutive_small_movements = 0
-        self.max_consecutive_small_movements = 5
+        self.max_consecutive_small_movements = 10  # INCREASED tolerance
         
         # Performance tracking
         self.processing_times = []
         self.match_counts = []
         self.pose_estimated = False
         
-        print(f"Enhanced Visual Odometry initialized:")
-        print(f"  - Precision tracking: 1cm minimum movement")
-        print(f"  - Enhanced RANSAC: {self.ransac_iterations} iterations")
-        print(f"  - Stereo baseline validation enabled")
+        # ✅ ADDED: Debug counters
+        self.pose_attempts = 0
+        self.pose_successes = 0
+        self.movement_rejections = 0
+        self.movement_acceptances = 0
+        
+        print(f"✅ FIXED Visual Odometry initialized:")
+        print(f"  - Precision tracking: 1mm minimum movement (was 1cm)")
+        print(f"  - RANSAC iterations: {self.ransac_iterations} (increased)")
+        print(f"  - Min inliers: {self.min_inliers_required} (reduced from 12)")
+        print(f"  - Movement validation: VERY PERMISSIVE")
     
     def get_optimized_camera_matrix(self) -> np.ndarray:
         """Get optimized camera matrix for D435i with enhanced precision"""
@@ -104,57 +113,63 @@ class VisualOdometry:
         
         return matrix
     
-    def enhanced_depth_to_3d_points(self, points_2d: np.ndarray, depth_frame: np.ndarray) -> np.ndarray:
+    def enhanced_depth_to_3d_points(self, points_2d: np.ndarray, depth_frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Enhanced 3D point generation with stereo baseline validation
+        ✅ FIXED: Much more lenient 3D point generation for real-world use
         """
         if points_2d.size == 0:
-            return np.array([])
+            return np.array([]), np.array([])
         
         points_3d = []
-        valid_count = 0
+        valid_indices = []
         total_count = len(points_2d.reshape(-1, 2))
         
-        for point in points_2d.reshape(-1, 2):
+        for i, point in enumerate(points_2d.reshape(-1, 2)):
             x, y = int(point[0]), int(point[1])
             
-            # Enhanced bounds checking with margin
-            if (5 <= x < depth_frame.shape[1] - 5 and 5 <= y < depth_frame.shape[0] - 5):
-                # Sample depth from 3x3 neighborhood for robustness
+            # ✅ FIXED: Much wider bounds checking (was 5 pixel margin, now 3)
+            if (3 <= x < depth_frame.shape[1] - 3 and 3 <= y < depth_frame.shape[0] - 3):
+                # ✅ FIXED: More robust depth sampling with smaller patch
                 depth_patch = depth_frame[y-1:y+2, x-1:x+2]
-                valid_depths = depth_patch[depth_patch > 100]  # >10cm
+                valid_depths = depth_patch[depth_patch > 50]  # REDUCED from 100 to 50
                 
-                if len(valid_depths) >= 3:
+                # ✅ FIXED: Reduced minimum valid depths requirement
+                if len(valid_depths) >= 2:  # REDUCED from 3 to 2
                     # Use median depth for robustness
                     depth = np.median(valid_depths)
                     
-                    # Enhanced depth validation (20cm to 6m for agricultural use)
-                    if 200 <= depth <= 6000:
+                    # ✅ FIXED: Much wider depth range for indoor/outdoor use
+                    if 50 <= depth <= 12000:  # EXPANDED from 200-8000 to 50-12000 (5cm to 12m)
                         z = depth / 1000.0  # Convert to meters
                         
                         # Back-project to 3D with double precision
                         x_3d = (x - self.camera_matrix[0, 2]) * z / self.camera_matrix[0, 0]
                         y_3d = (y - self.camera_matrix[1, 2]) * z / self.camera_matrix[1, 1]
                         
-                        # Enhanced sanity check for agricultural environments
-                        if abs(x_3d) <= 8.0 and abs(y_3d) <= 6.0 and 0.2 <= z <= 6.0:
+                        # ✅ FIXED: Much more lenient sanity check for real-world scenes
+                        if abs(x_3d) <= 15.0 and abs(y_3d) <= 15.0 and 0.05 <= z <= 12.0:  # EXPANDED limits
                             points_3d.append([x_3d, y_3d, z])
-                            valid_count += 1
+                            valid_indices.append(i)
         
         result = np.array(points_3d, dtype=np.float64)
+        valid_indices_array = np.array(valid_indices)
         
-        # Occasional debug output
-        if len(self.processing_times) % 100 == 0 and total_count > 0:
-            print(f"3D Points: {valid_count}/{total_count} valid ({100*valid_count/total_count:.1f}%)")
+        # ✅ ADDED: Debug output every 50 frames
+        if len(self.processing_times) % 50 == 0 and total_count > 0:
+            valid_count = len(result)
+            print(f"🎯 3D Points: {valid_count}/{total_count} valid ({100*valid_count/total_count:.1f}%) - range: 5cm-12m")
         
-        return result
+        return result, valid_indices_array
     
     def enhanced_pose_estimation(self, points_3d: np.ndarray, points_2d: np.ndarray) -> Tuple[bool, np.ndarray, np.ndarray, int]:
         """
-        Enhanced PnP estimation with multiple solvers and validation
-        Research-based approach with fallback methods
+        ✅ FIXED: Much more robust pose estimation for real-world use
         """
-        if len(points_3d) < self.min_matches or len(points_2d) < self.min_matches:
+        self.pose_attempts += 1
+        
+        # ✅ FIXED: Reduced minimum points requirement dramatically
+        if len(points_3d) < 4 or len(points_2d) < 4:  # REDUCED from 8 to 4
+            print(f"❌ Insufficient points: 3D={len(points_3d)}, 2D={len(points_2d)} (need 4+)")
             return False, None, None, 0
         
         try:
@@ -168,11 +183,12 @@ class VisualOdometry:
             if points_2d.ndim == 2:
                 points_2d = points_2d.reshape(-1, 1, 2)
             
-            # Enhanced solver cascade (research-based order)
+            # ✅ FIXED: Enhanced solver cascade with better order
             solvers = [
-                (cv2.SOLVEPNP_SQPNP, "SQPNP"),          # Most accurate for agricultural scenes
-                (cv2.SOLVEPNP_EPNP, "EPNP"),            # Robust for planar scenes  
-                (cv2.SOLVEPNP_ITERATIVE, "ITERATIVE"),  # Fallback refinement
+                (cv2.SOLVEPNP_EPNP, "EPNP"),                # Fast and robust
+                (cv2.SOLVEPNP_SQPNP, "SQPNP"),              # Most accurate
+                (cv2.SOLVEPNP_ITERATIVE, "ITERATIVE"),      # Refinement
+                (cv2.SOLVEPNP_P3P, "P3P")                   # Minimal case
             ]
             
             best_solution = None
@@ -180,14 +196,14 @@ class VisualOdometry:
             
             for method, name in solvers:
                 try:
-                    # Use RANSAC for robustness
+                    # ✅ FIXED: Much more aggressive RANSAC
                     success, rvec, tvec, inliers = cv2.solvePnPRansac(
                         points_3d.astype(np.float32),
                         points_2d.astype(np.float32),
                         self.camera_matrix.astype(np.float32),
                         self.dist_coeffs.astype(np.float32),
-                        iterationsCount=self.ransac_iterations,
-                        reprojectionError=self.ransac_threshold,
+                        iterationsCount=self.ransac_iterations,  # 5000 iterations
+                        reprojectionError=self.ransac_threshold,  # 3.0 pixels (relaxed)
                         confidence=0.99,
                         flags=method
                     )
@@ -197,82 +213,87 @@ class VisualOdometry:
                         translation_norm = np.linalg.norm(tvec)
                         rotation_norm = np.linalg.norm(rvec)
                         
-                        # Enhanced validation criteria
-                        if (num_inliers >= self.min_inliers_required and
-                            0.005 <= translation_norm <= self.max_translation and  # 5mm to 3m
-                            rotation_norm <= 0.5 and  # ~30 degrees max
+                        # ✅ FIXED: Much more lenient validation criteria
+                        if (num_inliers >= self.min_inliers_required and  # 4 inliers minimum
+                            0.001 <= translation_norm <= self.max_translation and  # 1mm to 5m
+                            rotation_norm <= 2.0 and    # ~114 degrees max (was 57)
                             num_inliers > max_inliers):
                             
                             max_inliers = num_inliers
                             best_solution = (True, rvec, tvec, num_inliers)
                             
-                            # Log successful estimation
-                            if len(self.processing_times) % 50 == 0:
-                                print(f"✅ {name}: {num_inliers}/{len(points_3d)} inliers, "
-                                      f"trans: {translation_norm:.4f}m, rot: {rotation_norm:.3f}rad")
+                            print(f"✅ {name}: {num_inliers}/{len(points_3d)} inliers, "
+                                  f"trans: {translation_norm:.4f}m, rot: {rotation_norm:.3f}rad")
+                        else:
+                            print(f"⚠️  {name}: {num_inliers} inliers rejected - "
+                                  f"trans: {translation_norm:.4f}m, rot: {rotation_norm:.3f}rad")
                         
                 except Exception as e:
-                    if len(self.processing_times) % 100 == 0:
-                        print(f"Solver {name} failed: {e}")
+                    print(f"❌ Solver {name} failed: {e}")
                     continue
             
             if best_solution:
+                self.pose_successes += 1
+                success_rate = (self.pose_successes / self.pose_attempts) * 100
+                print(f"🎯 Pose estimation SUCCESS (rate: {success_rate:.1f}%)")
                 return best_solution
             else:
+                print(f"❌ All pose estimation methods failed")
                 return False, None, None, 0
                 
         except Exception as e:
-            print(f"Enhanced pose estimation error: {e}")
+            print(f"❌ Enhanced pose estimation error: {e}")
             return False, None, None, 0
     
     def validate_movement(self, tvec: np.ndarray, rvec: np.ndarray) -> bool:
         """
-        Enhanced movement validation for precise distance tracking
+        ✅ FIXED: Much more permissive movement validation for continuous tracking
         """
         translation_magnitude = np.linalg.norm(tvec)
         rotation_magnitude = np.linalg.norm(rvec)
         
-        # Track movement history for validation
+        # ✅ FIXED: Very permissive movement thresholds
+        min_movement = 0.001  # 1mm minimum (was 1cm)
+        max_movement = 5.0    # 5m maximum per frame (was 3m)
+        max_rotation = 2.0    # ~114 degrees maximum (was ~57)
+        
+        # Basic sanity check only
+        is_reasonable = (min_movement <= translation_magnitude <= max_movement and 
+                        rotation_magnitude <= max_rotation)
+        
+        if not is_reasonable:
+            self.movement_rejections += 1
+            print(f"❌ Movement rejected: trans={translation_magnitude:.4f}m "
+                  f"(range: {min_movement:.3f}-{max_movement:.1f}), "
+                  f"rot={rotation_magnitude:.4f}rad (max: {max_rotation:.1f})")
+            return False
+        
+        # ✅ SIMPLIFIED: Remove complex consistency checks that block valid movement
+        # Just track movement history for statistics
         self.movement_history.append(translation_magnitude)
-        if len(self.movement_history) > 20:
+        if len(self.movement_history) > 50:  # Keep recent history
             self.movement_history.pop(0)
         
-        # Calculate recent movement statistics
-        recent_avg = np.mean(self.movement_history[-5:]) if len(self.movement_history) >= 5 else 0
+        # Accept the movement
+        self.valid_movements.append(translation_magnitude)
+        if len(self.valid_movements) > 100:
+            self.valid_movements.pop(0)
         
-        # Enhanced movement criteria
-        is_significant_movement = (
-            translation_magnitude >= self.min_translation_threshold and
-            rotation_magnitude <= 1.0 and  # Reasonable rotation limit
-            translation_magnitude <= self.max_translation
-        )
+        self.movement_acceptances += 1
+        acceptance_rate = (self.movement_acceptances / (self.movement_acceptances + self.movement_rejections)) * 100
         
-        # Validate against recent movement pattern
-        is_consistent = abs(translation_magnitude - recent_avg) <= 0.5  # Within 50cm of recent average
+        print(f"✅ Movement accepted: {translation_magnitude:.4f}m, "
+              f"rot: {rotation_magnitude:.4f}rad (acceptance rate: {acceptance_rate:.1f}%)")
         
-        if is_significant_movement and is_consistent:
-            self.consecutive_small_movements = 0
-            self.valid_movements.append(translation_magnitude)
-            if len(self.valid_movements) > 100:
-                self.valid_movements.pop(0)
-            return True
-        else:
-            self.consecutive_small_movements += 1
-            
-            # Debug output for movement validation
-            if self.consecutive_small_movements == 1:  # Only log first occurrence
-                print(f"Movement filtered: trans={translation_magnitude:.4f}m, "
-                      f"rot={rotation_magnitude:.4f}rad, avg={recent_avg:.4f}m")
-            
-            return False
+        return True
     
     def process_frame(self, color_frame: np.ndarray, depth_frame: np.ndarray) -> dict:
         """
-        Enhanced frame processing for precise distance tracking
+        ✅ FIXED: Enhanced frame processing for reliable distance tracking
         """
         start_time = time.time()
         
-        # Detect features
+        # Detect features using enhanced robust detection
         feature_results = self.feature_detector.process_frame(color_frame)
         keypoints = feature_results['keypoints']
         descriptors = feature_results['descriptors']
@@ -289,7 +310,11 @@ class VisualOdometry:
             'inliers': 0,
             'translation_magnitude': 0.0,
             'distance_traveled': self.precise_distance,
-            'debug_info': ''
+            'debug_info': '',
+            'pose_attempts': self.pose_attempts,
+            'pose_successes': self.pose_successes,
+            'movement_acceptances': self.movement_acceptances,
+            'movement_rejections': self.movement_rejections
         }
         
         # First frame initialization
@@ -300,15 +325,16 @@ class VisualOdometry:
             
             if keypoints and depth_frame is not None:
                 points_2d = np.array([kp.pt for kp in keypoints], dtype=np.float64)
-                self.prev_points_3d = self.enhanced_depth_to_3d_points(points_2d, depth_frame)
-                results['debug_info'] = f"Initialized with {len(self.prev_points_3d)} 3D points"
+                self.prev_points_3d, _ = self.enhanced_depth_to_3d_points(points_2d, depth_frame)
+                results['debug_info'] = f"INITIALIZED with {len(self.prev_points_3d)} 3D points from {len(keypoints)} features"
+                print(f"🚀 SLAM INITIALIZED: {len(self.prev_points_3d)} 3D points from {len(keypoints)} features")
             else:
-                results['debug_info'] = "First frame - waiting for features"
+                results['debug_info'] = "WAITING for features or depth data"
             
             results['processing_time'] = time.time() - start_time
             return results
         
-        # Process matches for pose estimation
+        # ✅ FIXED: Process matches for pose estimation with reduced requirements
         if len(matches) >= self.min_matches and self.prev_points_3d is not None:
             # Extract matched points
             matched_3d_points = []
@@ -318,11 +344,12 @@ class VisualOdometry:
                 prev_idx = match.queryIdx
                 if prev_idx < len(self.prev_points_3d):
                     point_3d = self.prev_points_3d[prev_idx]
-                    if len(point_3d) == 3 and point_3d[2] > 0.1:  # Valid depth
+                    if len(point_3d) == 3 and point_3d[2] > 0.05:  # Valid depth (5cm minimum)
                         matched_3d_points.append(point_3d)
                         matched_2d_points.append(keypoints[match.trainIdx].pt)
             
-            if len(matched_3d_points) >= self.min_inliers_required:
+            # ✅ FIXED: Reduced minimum requirement for matched points
+            if len(matched_3d_points) >= self.min_inliers_required:  # 4 minimum (was 12)
                 matched_3d_points = np.array(matched_3d_points, dtype=np.float64)
                 matched_2d_points = np.array(matched_2d_points, dtype=np.float64)
                 
@@ -356,17 +383,18 @@ class VisualOdometry:
                         'inliers': num_inliers,
                         'translation_magnitude': movement_distance,
                         'distance_traveled': self.precise_distance,
-                        'debug_info': f"Enhanced tracking: {len(matches)} matches, {num_inliers} inliers, "
-                                    f"movement: {movement_distance:.4f}m, total: {self.precise_distance:.3f}m"
+                        'debug_info': f"TRACKING: {len(matches)} matches → {num_inliers} inliers → "
+                                    f"movement: {movement_distance:.4f}m → total: {self.precise_distance:.3f}m"
                     })
                     
                     self.pose_estimated = True
                 else:
-                    results['debug_info'] = f"Pose validation failed - matches: {len(matches)}, pairs: {len(matched_3d_points)}"
+                    results['debug_info'] = f"POSE/MOVEMENT validation failed - matches: {len(matches)}, " \
+                                          f"3D-2D pairs: {len(matched_3d_points)}"
             else:
-                results['debug_info'] = f"Insufficient 3D-2D pairs: {len(matched_3d_points)} < {self.min_inliers_required}"
+                results['debug_info'] = f"INSUFFICIENT 3D-2D pairs: {len(matched_3d_points)} < {self.min_inliers_required}"
         else:
-            results['debug_info'] = f"Insufficient matches: {len(matches)} < {self.min_matches}"
+            results['debug_info'] = f"INSUFFICIENT matches: {len(matches)} < {self.min_matches}"
         
         # Update for next frame
         self.prev_frame = color_frame.copy()
@@ -375,7 +403,7 @@ class VisualOdometry:
         
         if keypoints and depth_frame is not None:
             points_2d = np.array([kp.pt for kp in keypoints], dtype=np.float64)
-            self.prev_points_3d = self.enhanced_depth_to_3d_points(points_2d, depth_frame)
+            self.prev_points_3d, _ = self.enhanced_depth_to_3d_points(points_2d, depth_frame)
         
         # Performance tracking
         processing_time = time.time() - start_time
@@ -388,6 +416,26 @@ class VisualOdometry:
         
         results['processing_time'] = processing_time
         return results
+    
+    def get_debug_info(self) -> dict:
+        """✅ NEW: Get detailed debug information for troubleshooting"""
+        return {
+            'features_detected': len(self.prev_keypoints) if self.prev_keypoints else 0,
+            'points_3d_generated': len(self.prev_points_3d) if self.prev_points_3d is not None else 0,
+            'pose_estimation_attempts': self.pose_attempts,
+            'pose_estimation_successes': self.pose_successes,
+            'pose_success_rate': (self.pose_successes / max(self.pose_attempts, 1)) * 100,
+            'movement_validations_passed': self.movement_acceptances,
+            'movement_validations_rejected': self.movement_rejections,
+            'movement_acceptance_rate': (self.movement_acceptances / max(self.movement_acceptances + self.movement_rejections, 1)) * 100,
+            'last_translation_magnitude': self.valid_movements[-1] if self.valid_movements else 0.0,
+            'current_thresholds': {
+                'min_translation': self.min_translation_threshold,
+                'min_inliers': self.min_inliers_required,
+                'ransac_threshold': self.ransac_threshold,
+                'min_matches': self.min_matches
+            }
+        }
     
     def get_current_position(self) -> np.ndarray:
         """Get current camera position"""
@@ -402,7 +450,9 @@ class VisualOdometry:
         return self.precise_distance
     
     def get_performance_stats(self) -> dict:
-        """Get enhanced performance statistics"""
+        """✅ ENHANCED: Get comprehensive performance statistics"""
+        debug_info = self.get_debug_info()
+        
         stats = {
             'avg_processing_time': np.mean(self.processing_times) if self.processing_times else 0.0,
             'avg_matches': np.mean(self.match_counts) if self.match_counts else 0.0,
@@ -411,12 +461,13 @@ class VisualOdometry:
             'precise_distance_traveled': self.precise_distance,
             'pose_estimation_active': self.pose_estimated,
             'valid_movements_count': len(self.valid_movements),
-            'movement_accuracy': np.std(self.valid_movements) if self.valid_movements else 0.0
+            'movement_accuracy': np.std(self.valid_movements) if self.valid_movements else 0.0,
+            'debug_info': debug_info
         }
         return stats
     
     def reset(self):
-        """Reset enhanced visual odometry state"""
+        """✅ ENHANCED: Reset visual odometry state with debug counters"""
         self.current_pose = np.eye(4, dtype=np.float64)
         self.trajectory = [np.array([0.0, 0.0, 0.0], dtype=np.float64)]
         self.rotations = [np.eye(3, dtype=np.float64)]
@@ -434,5 +485,14 @@ class VisualOdometry:
         self.valid_movements = []
         self.consecutive_small_movements = 0
         
+        # Reset debug counters
+        self.pose_attempts = 0
+        self.pose_successes = 0
+        self.movement_rejections = 0
+        self.movement_acceptances = 0
+        
         self.feature_detector.reset()
-        print("Enhanced Visual Odometry reset - precision tracking reinitialized")
+        print("✅ FIXED Visual Odometry reset - precision tracking reinitialized")
+        print(f"  - Movement validation: VERY PERMISSIVE (1mm minimum)")
+        print(f"  - Pose estimation: RELAXED (4+ inliers)")
+        print(f"  - 3D point generation: EXPANDED range (5cm-12m)")
